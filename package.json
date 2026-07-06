@@ -1,0 +1,15 @@
+{
+  "name": "practice-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @practice/backend --filter @practice/frontend dev",
+    "build": "pnpm --recursive build",
+    "lint": "pnpm --recursive lint",
+    "typecheck": "pnpm --recursive typecheck",
+    "prisma:generate": "pnpm --filter @practice/backend prisma:generate",
+    "prisma:migrate": "pnpm --filter @practice/backend prisma:migrate",
+    "seed": "pnpm --filter @practice/backend seed"
+  }
+}

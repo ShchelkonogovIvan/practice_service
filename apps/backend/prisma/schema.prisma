@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  ADMIN
+}
+
+enum SurveyFieldType {
+  TEXT
+  TEXTAREA
+  SELECT
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String                @id @default(cuid())
+  email        String                @unique
+  passwordHash String                @map("password_hash")
+  role         UserRole              @default(STUDENT)
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  applications Application[]
+  documents    StudentDocumentData[]
+  taskCards    TaskCard[]
+
+  @@map("users")
+}
+
+model Cohort {
+  id               String                @id @default(cuid())
+  name             String                @unique
+  applicationStart DateTime              @map("application_start")
+  applicationEnd   DateTime              @map("application_end")
+  practiceStart    DateTime              @map("practice_start")
+  practiceEnd      DateTime              @map("practice_end")
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  surveyFields     SurveyField[]
+  roles            CohortRole[]
+  applications     Application[]
+  testTask         TestTask?
+  documents        StudentDocumentData[]
+  taskCards        TaskCard[]
+
+  @@map("cohorts")
+}
+
+model SurveyField {
+  id        String          @id @default(cuid())
+  cohortId  String          @map("cohort_id")
+  label     String
+  type      SurveyFieldType
+  options   Json?
+  order     Int             @default(0)
+  required  Boolean         @default(true)
+  cohort    Cohort          @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  @@index([cohortId])
+  @@map("survey_fields")
+}
+
+model CohortRole {
+  id           String        @id @default(cuid())
+  cohortId     String        @map("cohort_id")
+  name         String
+  cohort       Cohort        @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  applications Application[]
+
+  @@unique([cohortId, name])
+  @@map("cohort_roles")
+}
+
+model TestTask {
+  id          String    @id @default(cuid())
+  cohortId    String    @unique @map("cohort_id")
+  content     String
+  publishedAt DateTime? @map("published_at")
+  cohort      Cohort    @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("test_tasks")
+}
+
+model Application {
+  id            String            @id @default(cuid())
+  userId        String            @map("user_id")
+  cohortId      String            @map("cohort_id")
+  status        ApplicationStatus @default(PENDING)
+  answers       Json              @default("{}")
+  reviewComment String?           @map("review_comment")
+  roleId        String?           @map("role_id")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cohort        Cohort            @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  role          CohortRole?       @relation(fields: [roleId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, cohortId])
+  @@index([cohortId, status])
+  @@map("applications")
+}
+
+model StudentDocumentData {
+  id                    String   @id @default(cuid())
+  userId                String   @map("user_id")
+  cohortId              String   @map("cohort_id")
+  studentFio            String?  @map("student_fio")
+  group                 String?
+  directionCode         String?  @map("direction_code")
+  directionName         String?  @map("direction_name")
+  programName           String?  @map("program_name")
+  specialty             String?
+  practiceTopic         String?  @map("practice_topic")
+  mainStageTasks        String?  @map("main_stage_tasks")
+  reviewActivities      String?  @map("review_activities")
+  reviewCharacteristic  String?  @map("review_characteristic")
+  reviewEmployed        String?  @map("review_employed")
+  reviewNextPractice    String?  @map("review_next_practice")
+  reviewEmploymentOffer String?  @map("review_employment_offer")
+  reviewSuggestions     String?  @map("review_suggestions")
+  reviewGrade           String?  @map("review_grade")
+  reportFileUrl         String?  @map("report_file_url")
+  reportAdminApproved   Boolean  @default(false) @map("report_admin_approved")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cohort                Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cohortId])
+  @@index([cohortId])
+  @@map("student_document_data")
+}
+
+model TaskCard {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  cohortId     String   @map("cohort_id")
+  date         DateTime @db.Date
+  title        String
+  description  String?
+  doneText     String?  @map("done_text")
+  artifactLink String?  @map("artifact_link")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cohort       Cohort   @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+
+  @@index([cohortId, date])
+  @@index([userId, cohortId])
+  @@map("task_cards")
+}
+
