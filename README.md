@@ -31,27 +31,4 @@ pnpm.cmd dev
 - сайт: http://localhost:3000
 - API: http://localhost:4000/api/health
 
-Тестовый админ:
-
-```text
-email: admin@example.com
-password: admin12345
-```
-
-## Структура
-
-```text
-apps/
-  backend/   REST API, Prisma, авторизация
-  frontend/  Next.js интерфейс
-```
-
-## Полезные команды
-
-```powershell
-pnpm.cmd dev
-pnpm.cmd build
-pnpm.cmd prisma:migrate
-pnpm.cmd seed
-```
 
