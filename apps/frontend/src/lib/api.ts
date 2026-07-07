@@ -7,6 +7,28 @@ export type AuthUser = {
   role: "STUDENT" | "ADMIN";
 };
 
+export type Cohort = {
+  id: string;
+  name: string;
+  applicationStart: string;
+  applicationEnd: string;
+  practiceStart: string;
+  practiceEnd: string;
+  surveyFields: Array<{
+    id: string;
+    label: string;
+    type: "TEXT" | "TEXTAREA" | "SELECT";
+    options?: unknown;
+    required: boolean;
+  }>;
+  roles: Array<{ id: string; name: string }>;
+  testTask: null | {
+    id: string;
+    content: string;
+    publishedAt: string | null;
+  };
+};
+
 export function getToken() {
   if (typeof window === "undefined") {
     return null;
@@ -65,8 +87,32 @@ export async function myApplications() {
 }
 
 export async function activeCohort() {
-  return api<{ cohort: null | { id: string; name: string; surveyFields: Array<{ id: string; label: string; type: string }> } }>(
-    "/public/cohorts/active"
-  );
+  return api<{ cohort: null | Cohort }>("/public/cohorts/active");
+}
+
+export async function listCohorts() {
+  return api<{ cohorts: Cohort[] }>("/cohorts");
+}
+
+export async function createCohort(payload: {
+  name: string;
+  applicationStart: string;
+  applicationEnd: string;
+  practiceStart: string;
+  practiceEnd: string;
+  surveyFields: Array<{
+    label: string;
+    type: "TEXT" | "TEXTAREA" | "SELECT";
+    options?: string[];
+    required: boolean;
+  }>;
+  roles: string[];
+  testTaskContent?: string;
+  testTaskPublished?: boolean;
+}) {
+  return api<{ cohort: Cohort }>("/cohorts", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 

@@ -4,7 +4,7 @@ import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, notFound } from "../http/errors.js";
 import { prisma } from "../lib/prisma.js";
-import { asObject, dateField, stringField } from "../utils/body.js";
+import { asObject, dateField, optionalStringField, stringField } from "../utils/body.js";
 
 export const cohortsRouter = Router();
 export const publicCohortsRouter = Router();
@@ -57,6 +57,8 @@ cohortsRouter.post(
     const practiceEnd = dateField(body, "practiceEnd");
     const surveyFields = parseSurveyFields(body.surveyFields);
     const roles = parseRoles(body.roles);
+    const testTaskContent = optionalStringField(body, "testTaskContent");
+    const testTaskPublished = body.testTaskPublished === true;
 
     const cohort = await prisma.cohort.create({
       data: {
@@ -70,7 +72,17 @@ cohortsRouter.post(
         },
         roles: {
           create: roles.map((roleName) => ({ name: roleName }))
-        }
+        },
+        ...(testTaskContent
+          ? {
+              testTask: {
+                create: {
+                  content: testTaskContent,
+                  publishedAt: testTaskPublished ? new Date() : null
+                }
+              }
+            }
+          : {})
       },
       include: cohortInclude
     });
@@ -92,6 +104,38 @@ cohortsRouter.get(
     }
 
     res.json({ cohort });
+  })
+);
+
+cohortsRouter.put(
+  "/:cohortId/test-task",
+  asyncHandler(async (req, res) => {
+    const body = asObject(req.body);
+    const content = stringField(body, "content");
+    const published = body.published === true;
+
+    const cohort = await prisma.cohort.findUnique({
+      where: { id: req.params.cohortId }
+    });
+
+    if (!cohort) {
+      throw notFound("Cohort not found");
+    }
+
+    const testTask = await prisma.testTask.upsert({
+      where: { cohortId: cohort.id },
+      update: {
+        content,
+        publishedAt: published ? new Date() : null
+      },
+      create: {
+        cohortId: cohort.id,
+        content,
+        publishedAt: published ? new Date() : null
+      }
+    });
+
+    res.json({ testTask });
   })
 );
 
