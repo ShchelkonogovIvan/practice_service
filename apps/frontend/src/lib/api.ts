@@ -81,7 +81,7 @@ export async function currentUser() {
 }
 
 export async function myApplications() {
-  return api<{ applications: Array<{ id: string; status: string; cohort: { name: string } }> }>(
+  return api<{ applications: Array<{ id: string; status: string; cohort: { id: string; name: string } }> }>(
     "/me/applications"
   );
 }
@@ -114,5 +114,15 @@ export async function createCohort(payload: {
     method: "POST",
     body: JSON.stringify(payload)
   });
+}
+
+export async function submitApplication(cohortId: string, answers: Record<string, unknown> = {}) {
+  return api<{ application: { id: string; status: string; cohort: { id: string; name: string } } }>(
+    `/cohorts/${cohortId}/applications`,
+    {
+      method: "POST",
+      body: JSON.stringify({ answers })
+    }
+  );
 }
 

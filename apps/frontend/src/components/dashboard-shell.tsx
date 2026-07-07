@@ -11,7 +11,8 @@ import {
   createCohort,
   currentUser,
   listCohorts,
-  myApplications
+  myApplications,
+  submitApplication
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,7 +21,7 @@ import { Input } from "@/components/ui/input";
 type AppRow = {
   id: string;
   status: string;
-  cohort: { name: string };
+  cohort: { id: string; name: string };
 };
 
 type CohortForm = {
@@ -58,6 +59,7 @@ export function DashboardShell() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   const isAdmin = user?.role === "ADMIN";
 
@@ -125,6 +127,26 @@ export function DashboardShell() {
     }
   }
 
+  async function onApplyToCohort(cohortId: string) {
+    setApplying(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      await submitApplication(cohortId);
+      setMessage("Заявка отправлена");
+      await loadDashboard();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не получилось отправить заявку");
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  const approvedApplication = applications.find((application) => application.status === "APPROVED");
+  const availableCohort =
+    !isAdmin && cohort && !applications.some((application) => application.cohort.id === cohort.id) ? cohort : null;
+
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-5 py-6">
       <header className="mb-6 flex items-center justify-between gap-4">
@@ -155,7 +177,7 @@ export function DashboardShell() {
       {!loading && (
         <div className="grid gap-4">
           <ProfileCard user={user} />
-          <ActiveCohortCard cohort={cohort} />
+          {!isAdmin ? <ActiveCohortCard application={approvedApplication} /> : null}
           {isAdmin ? (
             <AdminCohorts
               cohorts={cohorts}
@@ -165,7 +187,10 @@ export function DashboardShell() {
               onCreateCohort={onCreateCohort}
             />
           ) : (
-            <StudentApplications applications={applications} />
+            <>
+              <AvailableCohortCard cohort={availableCohort} applying={applying} onApply={onApplyToCohort} />
+              <StudentApplications applications={applications} />
+            </>
           )}
         </div>
       )}
@@ -182,11 +207,42 @@ function ProfileCard({ user }: { user: AuthUser | null }) {
   );
 }
 
-function ActiveCohortCard({ cohort }: { cohort: Cohort | null }) {
+function ActiveCohortCard({ application }: { application?: AppRow }) {
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold">Активная когорта</h2>
-      <p className="mt-2 text-sm text-muted">{cohort ? cohort.name : "Сейчас нет открытого набора."}</p>
+      <p className="mt-2 text-sm text-muted">
+        {application ? application.cohort.name : "Активной когорты пока нет. Она появится после одобрения заявки."}
+      </p>
+    </Card>
+  );
+}
+
+function AvailableCohortCard({
+  cohort,
+  applying,
+  onApply
+}: {
+  cohort: Cohort | null;
+  applying: boolean;
+  onApply: (cohortId: string) => void;
+}) {
+  return (
+    <Card className="p-5">
+      <h2 className="text-lg font-semibold">Доступные когорты</h2>
+      {cohort ? (
+        <div className="mt-4 rounded-md border border-border bg-white px-4 py-3">
+          <p className="font-medium">{cohort.name}</p>
+          <p className="mt-1 text-sm text-muted">
+            Прием заявок: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}
+          </p>
+          <Button className="mt-3" disabled={applying} onClick={() => onApply(cohort.id)}>
+            {applying ? "Отправляем..." : "Подать заявку"}
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-muted">Сейчас нет доступных когорт для подачи заявки.</p>
+      )}
     </Card>
   );
 }
@@ -408,4 +464,3 @@ function parseSurveyText(value: string) {
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU").format(new Date(value));
 }
-
