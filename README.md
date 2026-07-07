@@ -15,7 +15,7 @@
 
 Сначала нужны Node.js, pnpm и Docker Desktop.
 
-Если проект уже склонирован, перейдите в папку проекта:
+Перейдите в папку проекта:
 
 ```powershell
 cd practice_service
