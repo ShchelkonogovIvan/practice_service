@@ -15,8 +15,15 @@
 
 Сначала нужны Node.js, pnpm и Docker Desktop.
 
+Если проект уже склонирован, перейдите в папку проекта:
+
 ```powershell
-cd C:\Users\Flait\Documents\Codex\2026-07-06\orm
+cd practice_service
+```
+
+Дальше:
+
+```powershell
 Copy-Item .env.example .env
 docker compose up -d db
 pnpm.cmd install
