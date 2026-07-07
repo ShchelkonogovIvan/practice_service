@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
-dotenv.config({ path: new URL("../../../.env", import.meta.url) });
+dotenv.config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
 const [command, ...rawArgs] = process.argv.slice(2);
 const args = rawArgs.filter((arg) => arg !== "--");

@@ -1,6 +1,7 @@
+import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
-dotenv.config({ path: new URL("../../../.env", import.meta.url) });
+dotenv.config({ path: fileURLToPath(new URL("../../../.env", import.meta.url)) });
 
 async function main() {
   const [{ UserRole }, { hashPassword }, { prisma }] = await Promise.all([
