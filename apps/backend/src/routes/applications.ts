@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ApplicationStatus, UserRole } from "@prisma/client";
+import { ApplicationStatus, Prisma, SurveyFieldType, UserRole } from "@prisma/client";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, forbidden, notFound } from "../http/errors.js";
@@ -16,7 +16,14 @@ applicationsRouter.get(
   asyncHandler(async (req, res) => {
     const applications = await prisma.application.findMany({
       where: { userId: req.user!.id },
-      include: { cohort: true, role: true },
+      include: {
+        cohort: {
+          include: {
+            surveyFields: { orderBy: { order: "asc" } }
+          }
+        },
+        role: true
+      },
       orderBy: { createdAt: "desc" }
     });
 
@@ -32,10 +39,14 @@ applicationsRouter.post(
     }
 
     const body = asObject(req.body);
-    const answers = jsonObjectField(body, "answers");
+    const answers = jsonObjectField(body, "answers") as Record<string, unknown>;
+    const answersJson = answers as Prisma.InputJsonObject;
 
     const cohort = await prisma.cohort.findUnique({
-      where: { id: req.params.cohortId }
+      where: { id: req.params.cohortId },
+      include: {
+        surveyFields: { orderBy: { order: "asc" } }
+      }
     });
 
     if (!cohort) {
@@ -47,6 +58,8 @@ applicationsRouter.post(
       throw badRequest("Applications are closed for this cohort");
     }
 
+    validateApplicationAnswers(answers, cohort.surveyFields);
+
     const application = await prisma.application.upsert({
       where: {
         userId_cohortId: {
@@ -55,21 +68,68 @@ applicationsRouter.post(
         }
       },
       update: {
-        answers,
+        answers: answersJson,
         status: ApplicationStatus.PENDING,
         reviewComment: null
       },
       create: {
         userId: req.user!.id,
         cohortId: cohort.id,
-        answers
+        answers: answersJson
       },
-      include: { cohort: true, role: true }
+      include: {
+        cohort: {
+          include: {
+            surveyFields: { orderBy: { order: "asc" } }
+          }
+        },
+        role: true
+      }
     });
 
     res.status(201).json({ application });
   })
 );
+
+function validateApplicationAnswers(
+  answers: Record<string, unknown>,
+  surveyFields: Array<{
+    id: string;
+    label: string;
+    type: SurveyFieldType;
+    options: unknown;
+    required: boolean;
+  }>
+) {
+  for (const field of surveyFields) {
+    const value = answers[field.id];
+
+    if (field.required && isEmptyAnswer(value)) {
+      throw badRequest(`Field "${field.label}" is required`);
+    }
+
+    if (isEmptyAnswer(value)) {
+      continue;
+    }
+
+    if (typeof value !== "string") {
+      throw badRequest(`Field "${field.label}" must be a string`);
+    }
+
+    if (field.type === SurveyFieldType.SELECT) {
+      const options = Array.isArray(field.options) ? field.options : [];
+      const stringOptions = options.filter((option): option is string => typeof option === "string");
+
+      if (stringOptions.length > 0 && !stringOptions.includes(value)) {
+        throw badRequest(`Unsupported option for field "${field.label}"`);
+      }
+    }
+  }
+}
+
+function isEmptyAnswer(value: unknown) {
+  return value === undefined || value === null || (typeof value === "string" && value.trim().length === 0);
+}
 
 adminApplicationsRouter.use(requireAuth, requireAdmin);
 

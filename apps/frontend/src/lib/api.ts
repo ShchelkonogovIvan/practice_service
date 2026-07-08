@@ -29,6 +29,17 @@ export type Cohort = {
   };
 };
 
+export type Application = {
+  id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  answers: Record<string, unknown>;
+  reviewComment: string | null;
+  createdAt: string;
+  updatedAt: string;
+  role: null | { id: string; name: string };
+  cohort: Cohort;
+};
+
 export function getToken() {
   if (typeof window === "undefined") {
     return null;
@@ -81,13 +92,11 @@ export async function currentUser() {
 }
 
 export async function myApplications() {
-  return api<{ applications: Array<{ id: string; status: string; cohort: { id: string; name: string } }> }>(
-    "/me/applications"
-  );
+  return api<{ applications: Application[] }>("/me/applications");
 }
 
 export async function activeCohort() {
-  return api<{ cohort: null | Cohort }>("/public/cohorts/active");
+  return api<{ cohort: null | Cohort; cohorts: Cohort[] }>("/public/cohorts/active");
 }
 
 export async function listCohorts() {
@@ -117,12 +126,9 @@ export async function createCohort(payload: {
 }
 
 export async function submitApplication(cohortId: string, answers: Record<string, unknown> = {}) {
-  return api<{ application: { id: string; status: string; cohort: { id: string; name: string } } }>(
-    `/cohorts/${cohortId}/applications`,
-    {
-      method: "POST",
-      body: JSON.stringify({ answers })
-    }
-  );
+  return api<{ application: Application }>(`/cohorts/${cohortId}/applications`, {
+    method: "POST",
+    body: JSON.stringify({ answers })
+  });
 }
 

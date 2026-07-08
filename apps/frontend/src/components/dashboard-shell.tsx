@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import {
+  Application,
   AuthUser,
   Cohort,
   activeCohort,
@@ -18,12 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
-type AppRow = {
-  id: string;
-  status: string;
-  cohort: { id: string; name: string };
-};
-
 type CohortForm = {
   name: string;
   applicationStart: string;
@@ -35,6 +30,9 @@ type CohortForm = {
   testTaskContent: string;
   testTaskPublished: boolean;
 };
+
+type Answers = Record<string, string>;
+type AnswersByCohort = Record<string, Answers>;
 
 const initialForm: CohortForm = {
   name: "",
@@ -51,17 +49,23 @@ const initialForm: CohortForm = {
 export function DashboardShell() {
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [applications, setApplications] = useState<AppRow[]>([]);
-  const [cohort, setCohort] = useState<Cohort | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [activeCohorts, setActiveCohorts] = useState<Cohort[]>([]);
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
+  const [answersByCohort, setAnswersByCohort] = useState<AnswersByCohort>({});
   const [form, setForm] = useState<CohortForm>(initialForm);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [expandedCohortId, setExpandedCohortId] = useState<string | null>(null);
 
   const isAdmin = user?.role === "ADMIN";
+  const approvedApplication = applications.find((application) => application.status === "APPROVED");
+  const editableCohorts = isAdmin
+    ? []
+    : activeCohorts.filter((item) => applicationForCohort(applications, item.id)?.status !== "APPROVED");
 
   useEffect(() => {
     loadDashboard();
@@ -80,7 +84,8 @@ export function DashboardShell() {
 
       setUser(userResult.user);
       setApplications(applicationResult.applications);
-      setCohort(cohortResult.cohort);
+      setActiveCohorts(cohortResult.cohorts ?? (cohortResult.cohort ? [cohortResult.cohort] : []));
+      setAnswersByCohort(buildInitialAnswersByCohort(cohortResult.cohorts ?? [], applicationResult.applications));
 
       if (userResult.user.role === "ADMIN") {
         const cohortList = await listCohorts();
@@ -127,14 +132,28 @@ export function DashboardShell() {
     }
   }
 
-  async function onApplyToCohort(cohortId: string) {
+  async function onApplyToCohort(event: React.FormEvent, cohort: Cohort) {
+    event.preventDefault();
+
+    const answers = answersByCohort[cohort.id] ?? {};
+    const activeApplication = applicationForCohort(applications, cohort.id);
+
+    const missingField = cohort.surveyFields.find(
+      (field) => field.required && !answers[field.id]?.trim()
+    );
+
+    if (missingField) {
+      setError(`Заполните поле "${missingField.label}"`);
+      return;
+    }
+
     setApplying(true);
     setError(null);
     setMessage(null);
 
     try {
-      await submitApplication(cohortId);
-      setMessage("Заявка отправлена");
+      await submitApplication(cohort.id, answers);
+      setMessage(activeApplication ? "Заявка обновлена" : "Заявка отправлена");
       await loadDashboard();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не получилось отправить заявку");
@@ -142,10 +161,6 @@ export function DashboardShell() {
       setApplying(false);
     }
   }
-
-  const approvedApplication = applications.find((application) => application.status === "APPROVED");
-  const availableCohort =
-    !isAdmin && cohort && !applications.some((application) => application.cohort.id === cohort.id) ? cohort : null;
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-5 py-6">
@@ -188,7 +203,26 @@ export function DashboardShell() {
             />
           ) : (
             <>
-              <AvailableCohortCard cohort={availableCohort} applying={applying} onApply={onApplyToCohort} />
+              <ApplicationFormCard
+                cohorts={editableCohorts}
+                applications={applications}
+                answersByCohort={answersByCohort}
+                applying={applying}
+                expandedCohortId={expandedCohortId}
+                onToggleCohort={(cohortId) =>
+                  setExpandedCohortId((current) => (current === cohortId ? null : cohortId))
+                }
+                onAnswerChange={(cohortId, fieldId, value) =>
+                  setAnswersByCohort((current) => ({
+                    ...current,
+                    [cohortId]: {
+                      ...(current[cohortId] ?? {}),
+                      [fieldId]: value
+                    }
+                  }))
+                }
+                onSubmit={onApplyToCohort}
+              />
               <StudentApplications applications={applications} />
             </>
           )}
@@ -202,63 +236,197 @@ function ProfileCard({ user }: { user: AuthUser | null }) {
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold">Профиль</h2>
-      <p className="mt-2 text-sm text-muted">{user ? `${user.email} · ${user.role}` : "Неизвестный пользователь"}</p>
-    </Card>
-  );
-}
-
-function ActiveCohortCard({ application }: { application?: AppRow }) {
-  return (
-    <Card className="p-5">
-      <h2 className="text-lg font-semibold">Активная когорта</h2>
       <p className="mt-2 text-sm text-muted">
-        {application ? application.cohort.name : "Активной когорты пока нет. Она появится после одобрения заявки."}
+        {user ? `${user.email} · ${user.role}` : "Неизвестный пользователь"}
       </p>
     </Card>
   );
 }
 
-function AvailableCohortCard({
-  cohort,
+function ActiveCohortCard({ application }: { application?: Application }) {
+  return (
+    <Card className="p-5">
+      <h2 className="text-lg font-semibold">Активная когорта</h2>
+      <p className="mt-2 text-sm text-muted">
+        {application
+          ? application.cohort.name
+          : "Активной когорты пока нет. Она появится после одобрения заявки."}
+      </p>
+    </Card>
+  );
+}
+
+function ApplicationFormCard({
+  cohorts,
+  applications,
+  answersByCohort,
   applying,
-  onApply
+  expandedCohortId,
+  onToggleCohort,
+  onAnswerChange,
+  onSubmit
 }: {
-  cohort: Cohort | null;
+  cohorts: Cohort[];
+  applications: Application[];
+  answersByCohort: AnswersByCohort;
   applying: boolean;
-  onApply: (cohortId: string) => void;
+  expandedCohortId: string | null;
+  onToggleCohort: (cohortId: string) => void;
+  onAnswerChange: (cohortId: string, fieldId: string, value: string) => void;
+  onSubmit: (event: React.FormEvent, cohort: Cohort) => void;
 }) {
   return (
     <Card className="p-5">
-      <h2 className="text-lg font-semibold">Доступные когорты</h2>
-      {cohort ? (
-        <div className="mt-4 rounded-md border border-border bg-white px-4 py-3">
-          <p className="font-medium">{cohort.name}</p>
-          <p className="mt-1 text-sm text-muted">
-            Прием заявок: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}
-          </p>
-          <Button className="mt-3" disabled={applying} onClick={() => onApply(cohort.id)}>
-            {applying ? "Отправляем..." : "Подать заявку"}
-          </Button>
-        </div>
+      <h2 className="text-lg font-semibold">Заявка на практику</h2>
+      {cohorts.length === 0 ? (
+        <p className="mt-2 text-sm text-muted">
+          Сейчас нет доступных когорт для подачи заявки.
+        </p>
       ) : (
-        <p className="mt-2 text-sm text-muted">Сейчас нет доступных когорт для подачи заявки.</p>
+        <div className="mt-4 grid gap-4">
+          {cohorts.map((cohort) => {
+            const application = applicationForCohort(applications, cohort.id);
+            const answers = answersByCohort[cohort.id] ?? {};
+            const isExpanded = expandedCohortId === cohort.id;
+
+            return (
+              <form
+                key={cohort.id}
+                className="grid gap-4 rounded-md border border-border bg-white p-4"
+                onSubmit={(event) => onSubmit(event, cohort)}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{cohort.name}</p>
+                    <p className="mt-1 text-sm text-muted">
+                      Прием заявок: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}
+                    </p>
+                    {application ? (
+                      <p className="mt-2 text-sm text-muted">
+                        Заявка уже есть, можно обновить ответы.
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button type="button" variant="secondary" onClick={() => onToggleCohort(cohort.id)}>
+                    {isExpanded ? "Свернуть" : application ? "Изменить" : "Заполнить"}
+                  </Button>
+                </div>
+
+                {isExpanded ? (
+                  <>
+                    {cohort.surveyFields.length === 0 ? (
+                      <p className="text-sm text-muted">У этой когорты пока нет полей анкеты.</p>
+                    ) : (
+                      cohort.surveyFields.map((field) => (
+                        <SurveyFieldControl
+                          key={field.id}
+                          field={field}
+                          value={answers[field.id] ?? ""}
+                          onChange={(value) => onAnswerChange(cohort.id, field.id, value)}
+                        />
+                      ))
+                    )}
+
+                    {cohort.testTask?.publishedAt ? (
+                      <div className="rounded-md border border-border bg-slate-50 p-4">
+                        <p className="font-medium">Тестовое задание</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{cohort.testTask.content}</p>
+                      </div>
+                    ) : null}
+
+                    <Button type="submit" disabled={applying || cohort.surveyFields.length === 0}>
+                      {applying ? "Сохраняем..." : application ? "Обновить заявку" : "Отправить заявку"}
+                    </Button>
+                  </>
+                ) : null}
+              </form>
+            );
+          })}
+        </div>
       )}
     </Card>
   );
 }
 
-function StudentApplications({ applications }: { applications: AppRow[] }) {
+function SurveyFieldControl({
+  field,
+  value,
+  onChange
+}: {
+  field: Cohort["surveyFields"][number];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const options = getStringOptions(field.options);
+
+  if (field.type === "SELECT") {
+    return (
+      <label className="grid gap-2 text-sm font-medium">
+        {field.label}
+        <select
+          className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+          required={field.required}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          <option value="">Выберите вариант</option>
+          {options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
+  if (field.type === "TEXTAREA") {
+    return (
+      <TextAreaField
+        label={field.label}
+        value={value}
+        rows={4}
+        required={field.required}
+        onChange={onChange}
+      />
+    );
+  }
+
+  return (
+    <label className="grid gap-2 text-sm font-medium">
+      {field.label}
+      <Input required={field.required} value={value} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function StudentApplications({ applications }: { applications: Application[] }) {
   return (
     <Card className="p-5">
-      <h2 className="text-lg font-semibold">Заявки</h2>
+      <h2 className="text-lg font-semibold">Мои заявки</h2>
       <div className="mt-4 grid gap-3">
         {applications.length === 0 ? (
-          <p className="text-sm text-muted">Заявок пока нет.</p>
+          <p className="text-sm text-muted">У вас пока нет заявок.</p>
         ) : (
           applications.map((application) => (
             <div key={application.id} className="rounded-md border border-border bg-white px-4 py-3">
-              <p className="font-medium">{application.cohort.name}</p>
-              <p className="text-sm text-muted">Статус: {application.status}</p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium">{application.cohort.name}</p>
+                  <p className="mt-1 text-sm text-muted">
+                    Подана: {formatDate(application.createdAt)}
+                  </p>
+                  {application.role ? (
+                    <p className="mt-1 text-sm text-muted">Роль: {application.role.name}</p>
+                  ) : null}
+                  {application.reviewComment ? (
+                    <p className="mt-2 text-sm text-red-700">Комментарий: {application.reviewComment}</p>
+                  ) : null}
+                </div>
+                <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
+                  {statusLabel(application.status)}
+                </span>
+              </div>
             </div>
           ))
         )}
@@ -416,11 +584,13 @@ function TextAreaField({
   label,
   value,
   rows,
+  required,
   onChange
 }: {
   label: string;
   value: string;
   rows: number;
+  required?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -429,6 +599,7 @@ function TextAreaField({
       <textarea
         className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20"
         rows={rows}
+        required={required}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -459,6 +630,73 @@ function parseSurveyText(value: string) {
       order: index
     };
   });
+}
+
+function buildInitialAnswersByCohort(cohorts: Cohort[], applications: Application[]): AnswersByCohort {
+  return Object.fromEntries(
+    cohorts.map((cohort) => [cohort.id, buildInitialAnswers(cohort, applications)])
+  );
+}
+
+function buildInitialAnswers(cohort: Cohort | null, applications: Application[]): Answers {
+  if (!cohort) {
+    return {};
+  }
+
+  const currentApplication = applications.find((application) => application.cohort.id === cohort.id);
+  if (currentApplication) {
+    return normalizeAnswers(currentApplication.answers);
+  }
+
+  const previousApplications = applications
+    .filter((application) => application.cohort.id !== cohort.id)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  return cohort.surveyFields.reduce<Answers>((result, field) => {
+    for (const application of previousApplications) {
+      const previousField = application.cohort.surveyFields.find(
+        (candidate) => normalizeLabel(candidate.label) === normalizeLabel(field.label)
+      );
+      const previousValue = previousField ? application.answers[previousField.id] : undefined;
+
+      if (typeof previousValue === "string" && previousValue.trim()) {
+        result[field.id] = previousValue;
+        break;
+      }
+    }
+
+    return result;
+  }, {});
+}
+
+function applicationForCohort(applications: Application[], cohortId: string) {
+  return applications.find((application) => application.cohort.id === cohortId);
+}
+
+function normalizeAnswers(value: Record<string, unknown>): Answers {
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .map(([key, answer]) => [key, answer])
+  );
+}
+
+function normalizeLabel(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function getStringOptions(value: unknown) {
+  return Array.isArray(value) ? value.filter((option): option is string => typeof option === "string") : [];
+}
+
+function statusLabel(status: Application["status"]) {
+  const labels = {
+    PENDING: "На рассмотрении",
+    APPROVED: "Одобрена",
+    REJECTED: "Отклонена"
+  };
+
+  return labels[status];
 }
 
 function formatDate(value: string) {

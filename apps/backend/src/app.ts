@@ -22,8 +22,8 @@ export function createApp() {
   app.use("/api/health", healthRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/public/cohorts", publicCohortsRouter);
-  app.use("/api/cohorts", cohortsRouter);
   app.use("/api", applicationsRouter);
+  app.use("/api/cohorts", cohortsRouter);
   app.use("/api/admin", adminApplicationsRouter);
   app.use("/api", documentsRouter);
   app.use("/api/admin", adminDocumentsRouter);

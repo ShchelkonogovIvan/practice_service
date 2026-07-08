@@ -19,7 +19,7 @@ publicCohortsRouter.get(
   "/active",
   asyncHandler(async (_req, res) => {
     const now = new Date();
-    const cohort = await prisma.cohort.findFirst({
+    const cohorts = await prisma.cohort.findMany({
       where: {
         applicationStart: { lte: now },
         applicationEnd: { gte: now }
@@ -28,7 +28,7 @@ publicCohortsRouter.get(
       orderBy: { applicationEnd: "asc" }
     });
 
-    res.json({ cohort });
+    res.json({ cohort: cohorts[0] ?? null, cohorts });
   })
 );
 
