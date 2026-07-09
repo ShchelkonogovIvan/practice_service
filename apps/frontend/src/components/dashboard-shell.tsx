@@ -13,7 +13,10 @@ import {
   currentUser,
   listCohorts,
   myApplications,
-  submitApplication
+  submitApplication,
+  updateCohortRoles,
+  updateCohortSurvey,
+  updateTestTask
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -92,6 +95,8 @@ export function DashboardShell() {
         setCohorts(cohortList.cohorts);
       }
     } catch (caught) {
+      clearToken();
+      router.push("/auth");
       setError(caught instanceof Error ? caught.message : "Нужно войти заново");
     } finally {
       setLoading(false);
@@ -200,6 +205,7 @@ export function DashboardShell() {
               saving={saving}
               setForm={setForm}
               onCreateCohort={onCreateCohort}
+              onCohortChange={loadDashboard}
             />
           ) : (
             <>
@@ -440,16 +446,29 @@ function AdminCohorts({
   form,
   saving,
   setForm,
-  onCreateCohort
+  onCreateCohort,
+  onCohortChange
 }: {
   cohorts: Cohort[];
   form: CohortForm;
   saving: boolean;
   setForm: React.Dispatch<React.SetStateAction<CohortForm>>;
   onCreateCohort: (event: React.FormEvent) => void;
+  onCohortChange: () => Promise<void>;
 }) {
   const surveyPreview = useMemo(() => parseSurveyText(form.surveyText), [form.surveyText]);
   const rolesPreview = useMemo(() => parseLines(form.rolesText), [form.rolesText]);
+  const copySource = cohorts[0];
+
+  function copySettingsFromCohort(cohort: Cohort) {
+    setForm((current) => ({
+      ...current,
+      surveyText: surveyFieldsToText(cohort),
+      rolesText: cohortRolesToText(cohort),
+      testTaskContent: cohort.testTask?.content ?? current.testTaskContent,
+      testTaskPublished: Boolean(cohort.testTask?.publishedAt)
+    }));
+  }
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_1.15fr]">
@@ -459,7 +478,7 @@ function AdminCohorts({
           {cohorts.length === 0 ? (
             <p className="text-sm text-muted">Когорт пока нет.</p>
           ) : (
-            cohorts.map((item) => <CohortRow key={item.id} cohort={item} />)
+            cohorts.map((item) => <CohortRow key={item.id} cohort={item} onSaved={onCohortChange} />)
           )}
         </div>
       </Card>
@@ -467,6 +486,12 @@ function AdminCohorts({
       <Card className="p-5">
         <h2 className="text-lg font-semibold">Новая когорта</h2>
         <form className="mt-4 grid gap-4" onSubmit={onCreateCohort}>
+          {copySource ? (
+            <Button type="button" variant="secondary" onClick={() => copySettingsFromCohort(copySource)}>
+              Скопировать анкету, роли и ТЗ из "{copySource.name}"
+            </Button>
+          ) : null}
+
           <label className="grid gap-2 text-sm font-medium">
             Название
             <Input
@@ -547,7 +572,66 @@ function AdminCohorts({
   );
 }
 
-function CohortRow({ cohort }: { cohort: Cohort }) {
+function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise<void> }) {
+  const [isEditingSettings, setIsEditingSettings] = useState(false);
+  const [isEditingTask, setIsEditingTask] = useState(false);
+  const [surveyText, setSurveyText] = useState(surveyFieldsToText(cohort));
+  const [roleNames, setRoleNames] = useState(cohort.roles.map((role) => role.name));
+  const [newRole, setNewRole] = useState("");
+  const [content, setContent] = useState(cohort.testTask?.content ?? "");
+  const [published, setPublished] = useState(Boolean(cohort.testTask?.publishedAt));
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [savingTask, setSavingTask] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
+
+  function addRole() {
+    const roleName = newRole.trim();
+    if (!roleName || roleNames.includes(roleName)) {
+      return;
+    }
+
+    setRoleNames((current) => [...current, roleName]);
+    setNewRole("");
+  }
+
+  async function onSaveSettings() {
+    setSavingSettings(true);
+    setSettingsError(null);
+    setSettingsMessage(null);
+
+    try {
+      await updateCohortSurvey(cohort.id, parseSurveyText(surveyText));
+      const result = await updateCohortRoles(cohort.id, roleNames);
+      await onSaved();
+      setSettingsMessage(
+        result.warning
+          ? "Настройки сохранены. Удаленная роль уже была назначена практиканту, назначение у заявки сброшено."
+          : "Настройки анкеты и ролей сохранены"
+      );
+    } catch (caught) {
+      setSettingsError(caught instanceof Error ? caught.message : "Не получилось сохранить анкету и роли");
+    } finally {
+      setSavingSettings(false);
+    }
+  }
+
+  async function onSaveTask() {
+    setSavingTask(true);
+    setTaskError(null);
+
+    try {
+      await updateTestTask(cohort.id, content, published);
+      await onSaved();
+      setIsEditingTask(false);
+    } catch (caught) {
+      setTaskError(caught instanceof Error ? caught.message : "Не получилось сохранить тестовое задание");
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
   return (
     <div className="rounded-md border border-border bg-white px-4 py-3">
       <div className="flex items-start justify-between gap-3">
@@ -567,6 +651,92 @@ function CohortRow({ cohort }: { cohort: Cohort }) {
       <p className="mt-1 text-xs text-muted">
         Практика: {formatDate(cohort.practiceStart)} - {formatDate(cohort.practiceEnd)}
       </p>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" variant="secondary" onClick={() => setIsEditingSettings((current) => !current)}>
+          {isEditingSettings ? "Свернуть анкету и роли" : "Настроить анкету и роли"}
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setIsEditingTask((current) => !current)}>
+          {isEditingTask ? "Свернуть ТЗ" : "Настроить ТЗ"}
+        </Button>
+      </div>
+
+      {isEditingSettings ? (
+        <div className="mt-3 grid gap-3 rounded-md border border-border bg-slate-50 p-3">
+          <TextAreaField
+            label="Поля анкеты"
+            value={surveyText}
+            rows={5}
+            onChange={setSurveyText}
+          />
+          <p className="text-xs leading-5 text-muted">
+            Для списка вариантов пишем так: Вопрос | вариант 1, вариант 2. Порядок строк будет порядком полей в анкете.
+          </p>
+
+          <div className="grid gap-2">
+            <p className="text-sm font-medium">Роли/треки</p>
+            {roleNames.length === 0 ? (
+              <p className="text-sm text-muted">Ролей пока нет.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {roleNames.map((roleName) => (
+                  <span
+                    key={roleName}
+                    className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-2 py-1 text-sm"
+                  >
+                    {roleName}
+                    <button
+                      className="text-muted hover:text-red-700"
+                      type="button"
+                      onClick={() => setRoleNames((current) => current.filter((item) => item !== roleName))}
+                    >
+                      Удалить
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Input
+                placeholder="Например, Backend"
+                value={newRole}
+                onChange={(event) => setNewRole(event.target.value)}
+              />
+              <Button type="button" variant="secondary" disabled={!newRole.trim()} onClick={addRole}>
+                Добавить
+              </Button>
+            </div>
+          </div>
+
+          {settingsError ? <p className="text-sm text-red-700">{settingsError}</p> : null}
+          {settingsMessage ? <p className="text-sm text-green-700">{settingsMessage}</p> : null}
+
+          <Button type="button" disabled={savingSettings} onClick={onSaveSettings}>
+            {savingSettings ? "Сохраняем..." : "Сохранить анкету и роли"}
+          </Button>
+        </div>
+      ) : null}
+
+      {isEditingTask ? (
+        <div className="mt-3 grid gap-3">
+          <TextAreaField label="Тестовое задание" value={content} rows={5} onChange={setContent} />
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={published}
+              onChange={(event) => setPublished(event.target.checked)}
+            />
+            Опубликовать тестовое задание
+          </label>
+
+          {taskError ? <p className="text-sm text-red-700">{taskError}</p> : null}
+
+          <Button type="button" disabled={savingTask || !content.trim()} onClick={onSaveTask}>
+            {savingTask ? "Сохраняем..." : "Сохранить ТЗ"}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -605,6 +775,19 @@ function TextAreaField({
       />
     </label>
   );
+}
+
+function surveyFieldsToText(cohort: Cohort) {
+  return cohort.surveyFields
+    .map((field) => {
+      const options = getStringOptions(field.options);
+      return options.length ? `${field.label} | ${options.join(", ")}` : field.label;
+    })
+    .join("\n");
+}
+
+function cohortRolesToText(cohort: Cohort) {
+  return cohort.roles.map((role) => role.name).join("\n");
 }
 
 function parseLines(value: string) {

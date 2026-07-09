@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { UserRole } from "@prisma/client";
+import { Prisma, UserRole } from "@prisma/client";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { badRequest, unauthorized } from "../http/errors.js";
@@ -24,18 +24,30 @@ authRouter.post(
   asyncHandler(async (req, res) => {
     const body = asObject(req.body);
     const email = stringField(body, "email").toLowerCase();
-    const password = stringField(body, "password", 8);
+    const passwordValue = body.password;
 
     if (!email.includes("@")) {
-      throw badRequest("Email is invalid");
+      throw badRequest("Некорректный email");
     }
 
-    const user = await prisma.user.create({
-      data: {
-        email,
-        passwordHash: await hashPassword(password)
-      }
-    });
+    if (typeof passwordValue !== "string" || passwordValue.length < 8) {
+      throw badRequest("Пароль слишком короткий");
+    }
+
+    const user = await prisma.user
+      .create({
+        data: {
+          email,
+          passwordHash: await hashPassword(passwordValue)
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          throw badRequest("Этот email уже используется");
+        }
+
+        throw error;
+      });
 
     const token = signAccessToken({ sub: user.id, role: user.role });
     res.status(201).json({ user: publicUser(user), token });
@@ -51,7 +63,7 @@ authRouter.post(
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
-      throw unauthorized("Invalid email or password");
+      throw unauthorized("Неверный email или пароль");
     }
 
     const token = signAccessToken({ sub: user.id, role: user.role });

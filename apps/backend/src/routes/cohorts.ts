@@ -60,6 +60,8 @@ cohortsRouter.post(
     const testTaskContent = optionalStringField(body, "testTaskContent");
     const testTaskPublished = body.testTaskPublished === true;
 
+    validateCohortDates(applicationStart, applicationEnd, practiceStart, practiceEnd);
+
     const cohort = await prisma.cohort.create({
       data: {
         name,
@@ -104,6 +106,83 @@ cohortsRouter.get(
     }
 
     res.json({ cohort });
+  })
+);
+
+cohortsRouter.put(
+  "/:cohortId/survey-fields",
+  asyncHandler(async (req, res) => {
+    const body = asObject(req.body);
+    const surveyFields = parseSurveyFields(body.surveyFields);
+
+    const cohort = await prisma.cohort.findUnique({
+      where: { id: req.params.cohortId }
+    });
+
+    if (!cohort) {
+      throw notFound("Cohort not found");
+    }
+
+    const updated = await prisma.cohort.update({
+      where: { id: cohort.id },
+      data: {
+        surveyFields: {
+          deleteMany: {},
+          create: surveyFields
+        }
+      },
+      include: cohortInclude
+    });
+
+    res.json({ cohort: updated });
+  })
+);
+
+cohortsRouter.put(
+  "/:cohortId/roles",
+  asyncHandler(async (req, res) => {
+    const body = asObject(req.body);
+    const roles = parseRoles(body.roles);
+
+    const cohort = await prisma.cohort.findUnique({
+      where: { id: req.params.cohortId }
+    });
+
+    if (!cohort) {
+      throw notFound("Cohort not found");
+    }
+
+    const existingRoles = await prisma.cohortRole.findMany({
+      where: { cohortId: cohort.id },
+      include: {
+        _count: {
+          select: { applications: true }
+        }
+      }
+    });
+    const nextRoleNames = new Set(roles);
+    const removedAssignedRoles = existingRoles
+      .filter((role) => !nextRoleNames.has(role.name) && role._count.applications > 0)
+      .map((role) => role.name);
+
+    const updated = await prisma.cohort.update({
+      where: { id: cohort.id },
+      data: {
+        roles: {
+          deleteMany: {},
+          create: roles.map((roleName) => ({ name: roleName }))
+        }
+      },
+      include: cohortInclude
+    });
+
+    res.json({
+      cohort: updated,
+      warning:
+        removedAssignedRoles.length > 0
+          ? `Removed assigned roles: ${removedAssignedRoles.join(", ")}`
+          : null
+    });
   })
 );
 
@@ -180,3 +259,16 @@ function parseSurveyFields(value: unknown) {
   });
 }
 
+function validateCohortDates(applicationStart: Date, applicationEnd: Date, practiceStart: Date, practiceEnd: Date) {
+  if (applicationStart > applicationEnd) {
+    throw badRequest("Application end date must be later than application start date");
+  }
+
+  if (practiceStart > practiceEnd) {
+    throw badRequest("Practice end date must be later than practice start date");
+  }
+
+  if (applicationEnd > practiceStart) {
+    throw badRequest("Application period must finish before practice starts");
+  }
+}

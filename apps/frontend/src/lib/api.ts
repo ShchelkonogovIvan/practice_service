@@ -1,5 +1,6 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 const TOKEN_KEY = "practice_token";
+const PENDING_APPLICATION_KEY = "practice_pending_application";
 
 export type AuthUser = {
   id: string;
@@ -125,10 +126,74 @@ export async function createCohort(payload: {
   });
 }
 
+export async function updateCohortSurvey(
+  cohortId: string,
+  surveyFields: Array<{
+    label: string;
+    type: "TEXT" | "TEXTAREA" | "SELECT";
+    options?: string[];
+    required: boolean;
+  }>
+) {
+  return api<{ cohort: Cohort }>(`/cohorts/${cohortId}/survey-fields`, {
+    method: "PUT",
+    body: JSON.stringify({ surveyFields })
+  });
+}
+
+export async function updateCohortRoles(cohortId: string, roles: string[]) {
+  return api<{ cohort: Cohort; warning: string | null }>(`/cohorts/${cohortId}/roles`, {
+    method: "PUT",
+    body: JSON.stringify({ roles })
+  });
+}
+
+export async function updateTestTask(cohortId: string, content: string, published: boolean) {
+  return api<{ testTask: Cohort["testTask"] }>(`/cohorts/${cohortId}/test-task`, {
+    method: "PUT",
+    body: JSON.stringify({ content, published })
+  });
+}
+
 export async function submitApplication(cohortId: string, answers: Record<string, unknown> = {}) {
   return api<{ application: Application }>(`/cohorts/${cohortId}/applications`, {
     method: "POST",
     body: JSON.stringify({ answers })
   });
+}
+
+export type PendingApplication = {
+  cohortId: string;
+  answers: Record<string, string>;
+};
+
+export function savePendingApplication(application: PendingApplication) {
+  window.localStorage.setItem(PENDING_APPLICATION_KEY, JSON.stringify(application));
+}
+
+export function getPendingApplication() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const rawValue = window.localStorage.getItem(PENDING_APPLICATION_KEY);
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as PendingApplication;
+    if (!parsed.cohortId || !parsed.answers || typeof parsed.answers !== "object") {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingApplication() {
+  window.localStorage.removeItem(PENDING_APPLICATION_KEY);
 }
 
