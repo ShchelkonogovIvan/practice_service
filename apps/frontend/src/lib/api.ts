@@ -41,6 +41,14 @@ export type Application = {
   cohort: Cohort;
 };
 
+export type AdminApplication = Omit<Application, "cohort"> & {
+  user: {
+    id: string;
+    email: string;
+    createdAt?: string;
+  };
+};
+
 export function getToken() {
   if (typeof window === "undefined") {
     return null;
@@ -152,6 +160,26 @@ export async function updateTestTask(cohortId: string, content: string, publishe
   return api<{ testTask: Cohort["testTask"] }>(`/cohorts/${cohortId}/test-task`, {
     method: "PUT",
     body: JSON.stringify({ content, published })
+  });
+}
+
+export async function listCohortApplications(cohortId: string) {
+  return api<{ applications: AdminApplication[] }>(`/admin/cohorts/${cohortId}/applications`);
+}
+
+export async function updateApplicationStatus(payload: {
+  applicationId: string;
+  status: Application["status"];
+  roleId?: string;
+  reviewComment?: string;
+}) {
+  return api<{ application: AdminApplication }>(`/admin/applications/${payload.applicationId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      status: payload.status,
+      roleId: payload.roleId,
+      reviewComment: payload.reviewComment
+    })
   });
 }
 

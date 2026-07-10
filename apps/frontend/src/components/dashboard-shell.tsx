@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import {
+  AdminApplication,
   Application,
   AuthUser,
   Cohort,
@@ -11,11 +12,13 @@ import {
   clearToken,
   createCohort,
   currentUser,
+  listCohortApplications,
   listCohorts,
   myApplications,
   submitApplication,
   updateCohortRoles,
   updateCohortSurvey,
+  updateApplicationStatus,
   updateTestTask
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -575,6 +578,7 @@ function AdminCohorts({
 function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise<void> }) {
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isEditingTask, setIsEditingTask] = useState(false);
+  const [isReviewingApplications, setIsReviewingApplications] = useState(false);
   const [surveyText, setSurveyText] = useState(surveyFieldsToText(cohort));
   const [roleNames, setRoleNames] = useState(cohort.roles.map((role) => role.name));
   const [newRole, setNewRole] = useState("");
@@ -659,6 +663,9 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
         <Button type="button" variant="secondary" onClick={() => setIsEditingTask((current) => !current)}>
           {isEditingTask ? "Свернуть ТЗ" : "Настроить ТЗ"}
         </Button>
+        <Button type="button" variant="secondary" onClick={() => setIsReviewingApplications((current) => !current)}>
+          {isReviewingApplications ? "Свернуть заявки" : "Заявки"}
+        </Button>
       </div>
 
       {isEditingSettings ? (
@@ -737,6 +744,215 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
           </Button>
         </div>
       ) : null}
+
+      {isReviewingApplications ? <AdminApplicationsPanel cohort={cohort} /> : null}
+    </div>
+  );
+}
+
+function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
+  const [applications, setApplications] = useState<AdminApplication[]>([]);
+  const [statusFilter, setStatusFilter] = useState<"ALL" | Application["status"]>("ALL");
+  const [expandedApplicationId, setExpandedApplicationId] = useState<string | null>(null);
+  const [roleSelection, setRoleSelection] = useState<Record<string, string>>({});
+  const [rejectComments, setRejectComments] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [savingApplicationId, setSavingApplicationId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadApplications();
+  }, [cohort.id]);
+
+  async function loadApplications() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await listCohortApplications(cohort.id);
+      setApplications(result.applications);
+      setRoleSelection(
+        Object.fromEntries(result.applications.map((application) => [application.id, application.role?.id ?? ""]))
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не получилось загрузить заявки");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function approveApplication(application: AdminApplication) {
+    const roleId = roleSelection[application.id];
+    if (!roleId) {
+      setError("Для одобрения нужно выбрать роль");
+      return;
+    }
+
+    await changeStatus(application, "APPROVED", roleId);
+  }
+
+  async function rejectApplication(application: AdminApplication) {
+    const reviewComment = rejectComments[application.id]?.trim();
+    if (!reviewComment) {
+      setError("Для отклонения нужно указать причину");
+      return;
+    }
+
+    await changeStatus(application, "REJECTED", undefined, reviewComment);
+  }
+
+  async function changeStatus(
+    application: AdminApplication,
+    status: Application["status"],
+    roleId?: string,
+    reviewComment?: string
+  ) {
+    setSavingApplicationId(application.id);
+    setError(null);
+    setMessage(null);
+
+    try {
+      await updateApplicationStatus({
+        applicationId: application.id,
+        status,
+        roleId,
+        reviewComment
+      });
+      setMessage(status === "APPROVED" ? "Заявка одобрена" : "Заявка отклонена");
+      setExpandedApplicationId(null);
+      await loadApplications();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не получилось обновить статус заявки");
+    } finally {
+      setSavingApplicationId(null);
+    }
+  }
+
+  const visibleApplications =
+    statusFilter === "ALL"
+      ? applications
+      : applications.filter((application) => application.status === statusFilter);
+
+  return (
+    <div className="mt-3 grid gap-3 rounded-md border border-border bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="font-medium">Заявки когорты</p>
+          <p className="mt-1 text-sm text-muted">Всего заявок: {applications.length}</p>
+        </div>
+        <select
+          className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value as "ALL" | Application["status"])}
+        >
+          <option value="ALL">Все статусы</option>
+          <option value="PENDING">На рассмотрении</option>
+          <option value="APPROVED">Одобрена</option>
+          <option value="REJECTED">Отклонена</option>
+        </select>
+      </div>
+
+      {loading ? <p className="text-sm text-muted">Загрузка заявок...</p> : null}
+      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      {message ? <p className="text-sm text-green-700">{message}</p> : null}
+
+      {!loading && visibleApplications.length === 0 ? (
+        <p className="text-sm text-muted">Заявок с выбранным статусом пока нет.</p>
+      ) : null}
+
+      {visibleApplications.map((application) => {
+        const isSaving = savingApplicationId === application.id;
+        const canApprove = cohort.roles.length > 0;
+        const isExpanded = expandedApplicationId === application.id;
+
+        return (
+          <div key={application.id} className="grid gap-3 rounded-md border border-border bg-white p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-medium">{applicationAnswerPreview(application, cohort) || application.user.email}</p>
+                <p className="mt-1 text-sm text-muted">{application.user.email}</p>
+                <p className="mt-1 text-sm text-muted">Подана: {formatDate(application.createdAt)}</p>
+                {application.role ? <p className="mt-1 text-sm text-muted">Роль: {application.role.name}</p> : null}
+                {application.reviewComment ? (
+                  <p className="mt-2 text-sm text-red-700">Причина отказа: {application.reviewComment}</p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
+                  {statusLabel(application.status)}
+                </span>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setExpandedApplicationId((current) => (current === application.id ? null : application.id))}
+                >
+                  {isExpanded ? "Свернуть" : "Открыть"}
+                </Button>
+              </div>
+            </div>
+
+            {isExpanded ? (
+              <>
+                <div className="grid gap-2 rounded-md border border-border bg-slate-50 p-3 text-sm">
+                  <p className="font-medium">Ответы анкеты</p>
+                  {cohort.surveyFields.length === 0 ? (
+                    <p className="text-muted">Поля анкеты не настроены.</p>
+                  ) : (
+                    cohort.surveyFields.map((field) => (
+                      <div key={field.id} className="grid gap-1">
+                        <p className="text-muted">{field.label}</p>
+                        <p>{formatAnswer(application.answers[field.id])}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                  <select
+                    className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    disabled={!canApprove}
+                    value={roleSelection[application.id] ?? ""}
+                    onChange={(event) =>
+                      setRoleSelection((current) => ({ ...current, [application.id]: event.target.value }))
+                    }
+                  >
+                    <option value="">Выберите роль</option>
+                    {cohort.roles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button type="button" disabled={isSaving || !canApprove} onClick={() => approveApplication(application)}>
+                    Одобрить
+                  </Button>
+                </div>
+                {!canApprove ? <p className="text-sm text-red-700">Сначала добавьте роли в настройках когорты.</p> : null}
+
+                <div className="grid gap-2">
+                  <TextAreaField
+                    label="Причина отклонения"
+                    value={rejectComments[application.id] ?? ""}
+                    rows={3}
+                    onChange={(value) =>
+                      setRejectComments((current) => ({ ...current, [application.id]: value }))
+                    }
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={isSaving || !rejectComments[application.id]?.trim()}
+                    onClick={() => rejectApplication(application)}
+                  >
+                    Отклонить
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -870,6 +1086,24 @@ function normalizeLabel(value: string) {
 
 function getStringOptions(value: unknown) {
   return Array.isArray(value) ? value.filter((option): option is string => typeof option === "string") : [];
+}
+
+function applicationAnswerPreview(application: AdminApplication, cohort: Cohort) {
+  const fioField = cohort.surveyFields.find((field) => normalizeLabel(field.label).includes("фио"));
+  const value = fioField ? application.answers[fioField.id] : undefined;
+  return typeof value === "string" ? value : "";
+}
+
+function formatAnswer(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Да" : "Нет";
+  }
+
+  return "—";
 }
 
 function statusLabel(status: Application["status"]) {

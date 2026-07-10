@@ -169,6 +169,14 @@ adminApplicationsRouter.patch(
       throw notFound("Application not found");
     }
 
+    if (status === ApplicationStatus.APPROVED && !roleId) {
+      throw badRequest("Role is required to approve application");
+    }
+
+    if (status === ApplicationStatus.REJECTED && !reviewComment) {
+      throw badRequest("Review comment is required to reject application");
+    }
+
     if (roleId) {
       const role = await prisma.cohortRole.findFirst({
         where: { id: roleId, cohortId: application.cohortId }
