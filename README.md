@@ -4,7 +4,7 @@
 
 Сейчас в проекте есть базовая структура:
 
-- frontend на Next.js + TypeScript;
+- frontend на Next.js + TypeScript.
 - backend на Express + TypeScript;
 - PostgreSQL через Prisma;
 - регистрация и вход по email/паролю;

@@ -127,6 +127,7 @@ model StudentDocumentData {
   specialty             String?
   practiceTopic         String?  @map("practice_topic")
   mainStageTasks        String?  @map("main_stage_tasks")
+  supervisorUrfuName    String?  @map("supervisor_urfu_name")
   reviewActivities      String?  @map("review_activities")
   reviewCharacteristic  String?  @map("review_characteristic")
   reviewEmployed        String?  @map("review_employed")
@@ -135,6 +136,8 @@ model StudentDocumentData {
   reviewSuggestions     String?  @map("review_suggestions")
   reviewGrade           String?  @map("review_grade")
   reportFileUrl         String?  @map("report_file_url")
+  reportFileName        String?  @map("report_file_name")
+  reportUploadedAt      DateTime? @map("report_uploaded_at")
   reportAdminApproved   Boolean  @default(false) @map("report_admin_approved")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")

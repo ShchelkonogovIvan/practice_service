@@ -24,6 +24,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { StudentDocuments } from "@/components/student-documents";
+import { AdminDocumentsPanel } from "@/components/admin-documents";
 
 type CohortForm = {
   name: string;
@@ -233,6 +235,7 @@ export function DashboardShell() {
                 onSubmit={onApplyToCohort}
               />
               <StudentApplications applications={applications} />
+              {approvedApplication ? <StudentDocuments application={approvedApplication} /> : null}
             </>
           )}
         </div>
@@ -336,13 +339,6 @@ function ApplicationFormCard({
                       ))
                     )}
 
-                    {cohort.testTask?.publishedAt ? (
-                      <div className="rounded-md border border-border bg-slate-50 p-4">
-                        <p className="font-medium">Тестовое задание</p>
-                        <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{cohort.testTask.content}</p>
-                      </div>
-                    ) : null}
-
                     <Button type="submit" disabled={applying || cohort.surveyFields.length === 0}>
                       {applying ? "Сохраняем..." : application ? "Обновить заявку" : "Отправить заявку"}
                     </Button>
@@ -431,6 +427,16 @@ function StudentApplications({ applications }: { applications: Application[] }) 
                   {application.reviewComment ? (
                     <p className="mt-2 text-sm text-red-700">Комментарий: {application.reviewComment}</p>
                   ) : null}
+                  <div className="mt-3 rounded-md border border-border bg-slate-50 p-3">
+                    <p className="text-sm font-medium">Тестовое задание</p>
+                    {application.cohort.testTask?.publishedAt ? (
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
+                        {application.cohort.testTask.content}
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted">Тестовое задание появится позже.</p>
+                    )}
+                  </div>
                 </div>
                 <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
                   {statusLabel(application.status)}
@@ -579,6 +585,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
   const [isEditingSettings, setIsEditingSettings] = useState(false);
   const [isEditingTask, setIsEditingTask] = useState(false);
   const [isReviewingApplications, setIsReviewingApplications] = useState(false);
+  const [isReviewingDocuments, setIsReviewingDocuments] = useState(false);
   const [surveyText, setSurveyText] = useState(surveyFieldsToText(cohort));
   const [roleNames, setRoleNames] = useState(cohort.roles.map((role) => role.name));
   const [newRole, setNewRole] = useState("");
@@ -666,6 +673,9 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
         <Button type="button" variant="secondary" onClick={() => setIsReviewingApplications((current) => !current)}>
           {isReviewingApplications ? "Свернуть заявки" : "Заявки"}
         </Button>
+        <Button type="button" variant="secondary" onClick={() => setIsReviewingDocuments((current) => !current)}>
+          {isReviewingDocuments ? "Свернуть документы" : "Документы"}
+        </Button>
       </div>
 
       {isEditingSettings ? (
@@ -746,6 +756,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
       ) : null}
 
       {isReviewingApplications ? <AdminApplicationsPanel cohort={cohort} /> : null}
+      {isReviewingDocuments ? <AdminDocumentsPanel cohort={cohort} /> : null}
     </div>
   );
 }
@@ -794,11 +805,6 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
 
   async function rejectApplication(application: AdminApplication) {
     const reviewComment = rejectComments[application.id]?.trim();
-    if (!reviewComment) {
-      setError("Для отклонения нужно указать причину");
-      return;
-    }
-
     await changeStatus(application, "REJECTED", undefined, reviewComment);
   }
 
@@ -932,7 +938,7 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
 
                 <div className="grid gap-2">
                   <TextAreaField
-                    label="Причина отклонения"
+                    label="Комментарий при отклонении (необязательно)"
                     value={rejectComments[application.id] ?? ""}
                     rows={3}
                     onChange={(value) =>
@@ -942,7 +948,7 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
                   <Button
                     type="button"
                     variant="secondary"
-                    disabled={isSaving || !rejectComments[application.id]?.trim()}
+                    disabled={isSaving}
                     onClick={() => rejectApplication(application)}
                   >
                     Отклонить

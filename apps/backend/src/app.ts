@@ -15,7 +15,11 @@ export function createApp() {
   const app = express();
 
   app.use(helmet());
-  app.use(cors({ origin: env.corsOrigin, credentials: true }));
+  app.use(cors({
+    origin: env.corsOrigin,
+    credentials: true,
+    exposedHeaders: ["Content-Disposition"]
+  }));
   app.use(express.json({ limit: "1mb" }));
   app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
 
@@ -23,11 +27,11 @@ export function createApp() {
   app.use("/api/auth", authRouter);
   app.use("/api/public/cohorts", publicCohortsRouter);
   app.use("/api", applicationsRouter);
-  app.use("/api/cohorts", cohortsRouter);
   app.use("/api/admin", adminApplicationsRouter);
   app.use("/api", documentsRouter);
   app.use("/api/admin", adminDocumentsRouter);
   app.use("/api", tasksRouter);
+  app.use("/api/cohorts", cohortsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

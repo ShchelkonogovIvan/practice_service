@@ -19,7 +19,8 @@ applicationsRouter.get(
       include: {
         cohort: {
           include: {
-            surveyFields: { orderBy: { order: "asc" } }
+            surveyFields: { orderBy: { order: "asc" } },
+            testTask: true
           }
         },
         role: true
@@ -27,7 +28,15 @@ applicationsRouter.get(
       orderBy: { createdAt: "desc" }
     });
 
-    res.json({ applications });
+    res.json({
+      applications: applications.map((application) => ({
+        ...application,
+        cohort: {
+          ...application.cohort,
+          testTask: application.cohort.testTask?.publishedAt ? application.cohort.testTask : null
+        }
+      }))
+    });
   })
 );
 
@@ -171,10 +180,6 @@ adminApplicationsRouter.patch(
 
     if (status === ApplicationStatus.APPROVED && !roleId) {
       throw badRequest("Role is required to approve application");
-    }
-
-    if (status === ApplicationStatus.REJECTED && !reviewComment) {
-      throw badRequest("Review comment is required to reject application");
     }
 
     if (roleId) {

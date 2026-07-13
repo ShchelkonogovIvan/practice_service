@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import path from "node:path";
 import dotenv from "dotenv";
 
 dotenv.config({ path: fileURLToPath(new URL("../../../../.env", import.meta.url)) });
@@ -17,5 +18,7 @@ export const env = {
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
-  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000"
+  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+  uploadsDir: process.env.UPLOADS_DIR ?? path.resolve(process.cwd(), "uploads"),
+  templatesDir: process.env.TEMPLATES_DIR ?? fileURLToPath(new URL("../../templates", import.meta.url))
 };

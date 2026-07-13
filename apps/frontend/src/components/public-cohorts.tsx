@@ -121,15 +121,6 @@ export function PublicCohorts() {
                   ))
                 )}
 
-                <div className="rounded-md border border-border bg-white p-4">
-                  <p className="font-medium">Тестовое задание</p>
-                  {cohort.testTask?.publishedAt ? (
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{cohort.testTask.content}</p>
-                  ) : (
-                    <p className="mt-2 text-sm text-muted">Тестовое задание появится позже.</p>
-                  )}
-                </div>
-
                 <Button type="submit" disabled={isSubmitting || cohort.surveyFields.length === 0}>
                   {isSubmitting ? "Отправляем..." : "Отправить"}
                 </Button>

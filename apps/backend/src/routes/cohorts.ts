@@ -15,6 +15,11 @@ const cohortInclude = {
   testTask: true
 };
 
+const publicCohortInclude = {
+  surveyFields: { orderBy: { order: "asc" as const } },
+  roles: { orderBy: { name: "asc" as const } }
+};
+
 publicCohortsRouter.get(
   "/active",
   asyncHandler(async (_req, res) => {
@@ -24,11 +29,12 @@ publicCohortsRouter.get(
         applicationStart: { lte: now },
         applicationEnd: { gte: now }
       },
-      include: cohortInclude,
+      include: publicCohortInclude,
       orderBy: { applicationEnd: "asc" }
     });
 
-    res.json({ cohort: cohorts[0] ?? null, cohorts });
+    const publicCohorts = cohorts.map((cohort) => ({ ...cohort, testTask: null }));
+    res.json({ cohort: publicCohorts[0] ?? null, cohorts: publicCohorts });
   })
 );
 

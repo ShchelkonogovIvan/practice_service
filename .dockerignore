@@ -1,0 +1,12 @@
+.git
+.next
+**/.next
+dist
+**/dist
+node_modules
+**/node_modules
+.env
+.env.*
+coverage
+uploads
+*.log
