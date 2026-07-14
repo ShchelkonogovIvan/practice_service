@@ -96,6 +96,43 @@ export type AdminDocumentRow = {
   readiness: DocumentReadiness;
 };
 
+export type TaskCard = {
+  id: string;
+  userId: string;
+  cohortId: string;
+  date: string;
+  title: string;
+  description: string | null;
+  doneText: string | null;
+  artifactLink: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TaskParticipant = {
+  userId: string;
+  displayName: string;
+  role: null | { id: string; name: string };
+  cards: TaskCard[];
+};
+
+export type TaskBoard = {
+  cohort: {
+    id: string;
+    name: string;
+    practiceStart: string;
+    practiceEnd: string;
+  };
+  participants: TaskParticipant[];
+};
+
+export type TaskCardValues = {
+  title: string;
+  description: string;
+  doneText: string;
+  artifactLink: string;
+};
+
 export function getToken() {
   if (typeof window === "undefined") {
     return null;
@@ -336,6 +373,25 @@ export async function setReportApproval(cohortId: string, userId: string, approv
     `/admin/cohorts/${cohortId}/documents/${userId}/report-approval`,
     { method: "PATCH", body: JSON.stringify({ approved }) }
   );
+}
+
+export async function getTaskBoard(cohortId: string, showAll: boolean) {
+  const query = showAll ? "?showAll=true" : "";
+  return api<TaskBoard>(`/cohorts/${cohortId}/tasks${query}`);
+}
+
+export async function createTaskCard(cohortId: string, date: string, values: TaskCardValues) {
+  return api<{ card: TaskCard }>(`/cohorts/${cohortId}/tasks`, {
+    method: "POST",
+    body: JSON.stringify({ date, ...values })
+  });
+}
+
+export async function updateTaskCard(taskId: string, values: TaskCardValues) {
+  return api<{ card: TaskCard }>(`/tasks/${taskId}`, {
+    method: "PATCH",
+    body: JSON.stringify(values)
+  });
 }
 
 export async function downloadApiFile(path: string, fallbackName: string) {

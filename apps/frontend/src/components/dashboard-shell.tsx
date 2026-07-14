@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { ClipboardList, FileText, ListChecks, LogOut, Plus, Settings } from "lucide-react";
 import {
   AdminApplication,
   Application,
@@ -26,6 +26,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { StudentDocuments } from "@/components/student-documents";
 import { AdminDocumentsPanel } from "@/components/admin-documents";
+import { TaskBoard } from "@/components/task-board";
 
 type CohortForm = {
   name: string;
@@ -41,6 +42,8 @@ type CohortForm = {
 
 type Answers = Record<string, string>;
 type AnswersByCohort = Record<string, Answers>;
+type StudentTab = "applications" | "documents" | "tasks";
+type AdminTab = "applications" | "documents" | "tasks" | "settings";
 
 const initialForm: CohortForm = {
   name: "",
@@ -68,6 +71,7 @@ export function DashboardShell() {
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [expandedCohortId, setExpandedCohortId] = useState<string | null>(null);
+  const [studentTab, setStudentTab] = useState<StudentTab>("applications");
 
   const isAdmin = user?.role === "ADMIN";
   const approvedApplication = applications.find((application) => application.status === "APPROVED");
@@ -214,28 +218,55 @@ export function DashboardShell() {
             />
           ) : (
             <>
-              <ApplicationFormCard
-                cohorts={editableCohorts}
-                applications={applications}
-                answersByCohort={answersByCohort}
-                applying={applying}
-                expandedCohortId={expandedCohortId}
-                onToggleCohort={(cohortId) =>
-                  setExpandedCohortId((current) => (current === cohortId ? null : cohortId))
-                }
-                onAnswerChange={(cohortId, fieldId, value) =>
-                  setAnswersByCohort((current) => ({
-                    ...current,
-                    [cohortId]: {
-                      ...(current[cohortId] ?? {}),
-                      [fieldId]: value
-                    }
-                  }))
-                }
-                onSubmit={onApplyToCohort}
+              <DashboardTabs
+                active={studentTab}
+                items={[
+                  { id: "applications", label: "Заявки", icon: ClipboardList },
+                  { id: "documents", label: "Документы", icon: FileText },
+                  { id: "tasks", label: "Задачи", icon: ListChecks }
+                ]}
+                onChange={(tab) => setStudentTab(tab as StudentTab)}
               />
-              <StudentApplications applications={applications} />
-              {approvedApplication ? <StudentDocuments application={approvedApplication} /> : null}
+
+              {studentTab === "applications" ? (
+                <div className="grid gap-4">
+                  <ApplicationFormCard
+                    cohorts={editableCohorts}
+                    applications={applications}
+                    answersByCohort={answersByCohort}
+                    applying={applying}
+                    expandedCohortId={expandedCohortId}
+                    onToggleCohort={(cohortId) =>
+                      setExpandedCohortId((current) => (current === cohortId ? null : cohortId))
+                    }
+                    onAnswerChange={(cohortId, fieldId, value) =>
+                      setAnswersByCohort((current) => ({
+                        ...current,
+                        [cohortId]: {
+                          ...(current[cohortId] ?? {}),
+                          [fieldId]: value
+                        }
+                      }))
+                    }
+                    onSubmit={onApplyToCohort}
+                  />
+                  <StudentApplications applications={applications} />
+                </div>
+              ) : null}
+
+              {studentTab === "documents" && approvedApplication ? (
+                <StudentDocuments application={approvedApplication} />
+              ) : null}
+              {studentTab === "documents" && !approvedApplication ? (
+                <UnavailableSection text="Документы станут доступны после одобрения заявки." />
+              ) : null}
+
+              {studentTab === "tasks" && approvedApplication && user ? (
+                <TaskBoard cohortId={approvedApplication.cohort.id} currentUserId={user.id} />
+              ) : null}
+              {studentTab === "tasks" && !approvedApplication ? (
+                <UnavailableSection text="Задачи станут доступны после одобрения заявки." />
+              ) : null}
             </>
           )}
         </div>
@@ -465,9 +496,18 @@ function AdminCohorts({
   onCreateCohort: (event: React.FormEvent) => void;
   onCohortChange: () => Promise<void>;
 }) {
+  const [selectedCohortId, setSelectedCohortId] = useState(cohorts[0]?.id ?? "");
+  const [showCreateForm, setShowCreateForm] = useState(cohorts.length === 0);
   const surveyPreview = useMemo(() => parseSurveyText(form.surveyText), [form.surveyText]);
   const rolesPreview = useMemo(() => parseLines(form.rolesText), [form.rolesText]);
-  const copySource = cohorts[0];
+  const selectedCohort = cohorts.find((cohort) => cohort.id === selectedCohortId) ?? cohorts[0];
+  const copySource = selectedCohort ?? cohorts[0];
+
+  useEffect(() => {
+    if (!cohorts.some((cohort) => cohort.id === selectedCohortId)) {
+      setSelectedCohortId(cohorts[0]?.id ?? "");
+    }
+  }, [cohorts, selectedCohortId]);
 
   function copySettingsFromCohort(cohort: Cohort) {
     setForm((current) => ({
@@ -480,19 +520,33 @@ function AdminCohorts({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_1.15fr]">
+    <div className="grid gap-4">
       <Card className="p-5">
-        <h2 className="text-lg font-semibold">Когорты</h2>
-        <div className="mt-4 grid gap-3">
-          {cohorts.length === 0 ? (
-            <p className="text-sm text-muted">Когорт пока нет.</p>
-          ) : (
-            cohorts.map((item) => <CohortRow key={item.id} cohort={item} onSaved={onCohortChange} />)
-          )}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <label className="grid min-w-60 flex-1 gap-2 text-sm font-medium">
+            Рабочая когорта
+            <select
+              className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              value={selectedCohort?.id ?? ""}
+              disabled={cohorts.length === 0}
+              onChange={(event) => setSelectedCohortId(event.target.value)}
+            >
+              {cohorts.length === 0 ? <option value="">Когорт пока нет</option> : null}
+              {cohorts.map((cohort) => (
+                <option key={cohort.id} value={cohort.id}>
+                  {cohort.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button type="button" variant="secondary" onClick={() => setShowCreateForm((current) => !current)}>
+            <Plus className="mr-2 h-4 w-4" />
+            {showCreateForm ? "Скрыть форму" : "Новая когорта"}
+          </Button>
         </div>
       </Card>
 
-      <Card className="p-5">
+      {showCreateForm ? <Card className="p-5">
         <h2 className="text-lg font-semibold">Новая когорта</h2>
         <form className="mt-4 grid gap-4" onSubmit={onCreateCohort}>
           {copySource ? (
@@ -576,16 +630,19 @@ function AdminCohorts({
             {saving ? "Создаем..." : "Создать когорту"}
           </Button>
         </form>
-      </Card>
+      </Card> : null}
+
+      {selectedCohort ? (
+        <CohortRow key={selectedCohort.id} cohort={selectedCohort} onSaved={onCohortChange} />
+      ) : (
+        <UnavailableSection text="Создайте первую когорту, чтобы открыть рабочие разделы." />
+      )}
     </div>
   );
 }
 
 function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise<void> }) {
-  const [isEditingSettings, setIsEditingSettings] = useState(false);
-  const [isEditingTask, setIsEditingTask] = useState(false);
-  const [isReviewingApplications, setIsReviewingApplications] = useState(false);
-  const [isReviewingDocuments, setIsReviewingDocuments] = useState(false);
+  const [activeTab, setActiveTab] = useState<AdminTab>("applications");
   const [surveyText, setSurveyText] = useState(surveyFieldsToText(cohort));
   const [roleNames, setRoleNames] = useState(cohort.roles.map((role) => role.name));
   const [newRole, setNewRole] = useState("");
@@ -635,7 +692,6 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
     try {
       await updateTestTask(cohort.id, content, published);
       await onSaved();
-      setIsEditingTask(false);
     } catch (caught) {
       setTaskError(caught instanceof Error ? caught.message : "Не получилось сохранить тестовое задание");
     } finally {
@@ -644,121 +700,166 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
   }
 
   return (
-    <div className="rounded-md border border-border bg-white px-4 py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="font-medium">{cohort.name}</p>
-          <p className="mt-1 text-sm text-muted">
-            Анкета: {cohort.surveyFields.length} · Роли: {cohort.roles.length}
-          </p>
+    <section className="grid gap-4">
+      <Card className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm text-muted">Активная когорта</p>
+            <h2 className="mt-1 text-xl font-semibold">{cohort.name}</h2>
+            <p className="mt-2 text-sm text-muted">
+              Анкета: {cohort.surveyFields.length} · Роли: {cohort.roles.length}
+            </p>
+          </div>
+          <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
+            {cohort.testTask?.publishedAt ? "ТЗ опубликовано" : "ТЗ не опубликовано"}
+          </span>
         </div>
-        <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
-          {cohort.testTask?.publishedAt ? "ТЗ опубликовано" : "ТЗ не опубликовано"}
-        </span>
-      </div>
-      <p className="mt-3 text-xs text-muted">
-        Прием заявок: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}
-      </p>
-      <p className="mt-1 text-xs text-muted">
-        Практика: {formatDate(cohort.practiceStart)} - {formatDate(cohort.practiceEnd)}
-      </p>
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
+          <p>Прием заявок: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}</p>
+          <p>Практика: {formatDate(cohort.practiceStart)} - {formatDate(cohort.practiceEnd)}</p>
+        </div>
+      </Card>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" onClick={() => setIsEditingSettings((current) => !current)}>
-          {isEditingSettings ? "Свернуть анкету и роли" : "Настроить анкету и роли"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setIsEditingTask((current) => !current)}>
-          {isEditingTask ? "Свернуть ТЗ" : "Настроить ТЗ"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setIsReviewingApplications((current) => !current)}>
-          {isReviewingApplications ? "Свернуть заявки" : "Заявки"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setIsReviewingDocuments((current) => !current)}>
-          {isReviewingDocuments ? "Свернуть документы" : "Документы"}
-        </Button>
-      </div>
+      <DashboardTabs
+        active={activeTab}
+        items={[
+          { id: "applications", label: "Заявки", icon: ClipboardList },
+          { id: "documents", label: "Документы", icon: FileText },
+          { id: "tasks", label: "Задачи", icon: ListChecks },
+          { id: "settings", label: "Настройки", icon: Settings }
+        ]}
+        onChange={(tab) => setActiveTab(tab as AdminTab)}
+      />
 
-      {isEditingSettings ? (
-        <div className="mt-3 grid gap-3 rounded-md border border-border bg-slate-50 p-3">
-          <TextAreaField
-            label="Поля анкеты"
-            value={surveyText}
-            rows={5}
-            onChange={setSurveyText}
-          />
-          <p className="text-xs leading-5 text-muted">
-            Для списка вариантов пишем так: Вопрос | вариант 1, вариант 2. Порядок строк будет порядком полей в анкете.
-          </p>
+      {activeTab === "applications" ? <AdminApplicationsPanel cohort={cohort} /> : null}
+      {activeTab === "documents" ? <AdminDocumentsPanel cohort={cohort} /> : null}
+      {activeTab === "tasks" ? <TaskBoard cohortId={cohort.id} currentUserId="" isAdmin /> : null}
 
-          <div className="grid gap-2">
-            <p className="text-sm font-medium">Роли/треки</p>
-            {roleNames.length === 0 ? (
-              <p className="text-sm text-muted">Ролей пока нет.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {roleNames.map((roleName) => (
-                  <span
-                    key={roleName}
-                    className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-2 py-1 text-sm"
-                  >
-                    {roleName}
-                    <button
-                      className="text-muted hover:text-red-700"
-                      type="button"
-                      onClick={() => setRoleNames((current) => current.filter((item) => item !== roleName))}
+      {activeTab === "settings" ? (
+        <Card className="p-5">
+          <div>
+            <h3 className="text-base font-semibold">Анкета и роли</h3>
+            <p className="mt-1 text-sm text-muted">Настройки применяются только к выбранной когорте.</p>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            <TextAreaField
+              label="Поля анкеты"
+              value={surveyText}
+              rows={5}
+              onChange={setSurveyText}
+            />
+            <p className="text-xs leading-5 text-muted">
+              Для списка вариантов пишем так: Вопрос | вариант 1, вариант 2. Порядок строк будет порядком полей в анкете.
+            </p>
+
+            <div className="grid gap-2">
+              <p className="text-sm font-medium">Роли/треки</p>
+              {roleNames.length === 0 ? (
+                <p className="text-sm text-muted">Ролей пока нет.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {roleNames.map((roleName) => (
+                    <span
+                      key={roleName}
+                      className="inline-flex items-center gap-2 rounded-md border border-border bg-white px-2 py-1 text-sm"
                     >
-                      Удалить
-                    </button>
-                  </span>
-                ))}
+                      {roleName}
+                      <button
+                        className="text-muted hover:text-red-700"
+                        type="button"
+                        onClick={() => setRoleNames((current) => current.filter((item) => item !== roleName))}
+                      >
+                        Удалить
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input
+                  placeholder="Например, Backend"
+                  value={newRole}
+                  onChange={(event) => setNewRole(event.target.value)}
+                />
+                <Button type="button" variant="secondary" disabled={!newRole.trim()} onClick={addRole}>
+                  Добавить
+                </Button>
               </div>
-            )}
-            <div className="flex gap-2">
-              <Input
-                placeholder="Например, Backend"
-                value={newRole}
-                onChange={(event) => setNewRole(event.target.value)}
-              />
-              <Button type="button" variant="secondary" disabled={!newRole.trim()} onClick={addRole}>
-                Добавить
+            </div>
+
+            {settingsError ? <p className="text-sm text-red-700">{settingsError}</p> : null}
+            {settingsMessage ? <p className="text-sm text-green-700">{settingsMessage}</p> : null}
+
+            <Button type="button" disabled={savingSettings} onClick={onSaveSettings}>
+              {savingSettings ? "Сохраняем..." : "Сохранить анкету и роли"}
+            </Button>
+          </div>
+
+          <div className="mt-6 border-t border-border pt-5">
+            <h3 className="text-base font-semibold">Тестовое задание</h3>
+            <div className="mt-4 grid gap-3">
+              <TextAreaField label="Содержание задания" value={content} rows={5} onChange={setContent} />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={published}
+                  onChange={(event) => setPublished(event.target.checked)}
+                />
+                Опубликовать тестовое задание
+              </label>
+              {taskError ? <p className="text-sm text-red-700">{taskError}</p> : null}
+              <Button type="button" disabled={savingTask || !content.trim()} onClick={onSaveTask}>
+                {savingTask ? "Сохраняем..." : "Сохранить тестовое задание"}
               </Button>
             </div>
           </div>
-
-          {settingsError ? <p className="text-sm text-red-700">{settingsError}</p> : null}
-          {settingsMessage ? <p className="text-sm text-green-700">{settingsMessage}</p> : null}
-
-          <Button type="button" disabled={savingSettings} onClick={onSaveSettings}>
-            {savingSettings ? "Сохраняем..." : "Сохранить анкету и роли"}
-          </Button>
-        </div>
+        </Card>
       ) : null}
+    </section>
+  );
+}
 
-      {isEditingTask ? (
-        <div className="mt-3 grid gap-3">
-          <TextAreaField label="Тестовое задание" value={content} rows={5} onChange={setContent} />
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={published}
-              onChange={(event) => setPublished(event.target.checked)}
-            />
-            Опубликовать тестовое задание
-          </label>
-
-          {taskError ? <p className="text-sm text-red-700">{taskError}</p> : null}
-
-          <Button type="button" disabled={savingTask || !content.trim()} onClick={onSaveTask}>
-            {savingTask ? "Сохраняем..." : "Сохранить ТЗ"}
-          </Button>
-        </div>
-      ) : null}
-
-      {isReviewingApplications ? <AdminApplicationsPanel cohort={cohort} /> : null}
-      {isReviewingDocuments ? <AdminDocumentsPanel cohort={cohort} /> : null}
+function DashboardTabs({
+  active,
+  items,
+  onChange
+}: {
+  active: string;
+  items: Array<{ id: string; label: string; icon: React.ComponentType<{ className?: string }> }>;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="overflow-x-auto border-b border-border" role="tablist" aria-label="Разделы кабинета">
+      <div className="flex min-w-max gap-1">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const selected = active === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                selected
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted hover:border-slate-300 hover:text-foreground"
+              }`}
+              onClick={() => onChange(item.id)}
+            >
+              <Icon className="h-4 w-4" />
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function UnavailableSection({ text }: { text: string }) {
+  return <Card className="p-5 text-sm text-muted">{text}</Card>;
 }
 
 function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
