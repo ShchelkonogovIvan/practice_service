@@ -12,13 +12,25 @@ function required(name: string, fallback?: string) {
   return value;
 }
 
+const nodeEnv = process.env.NODE_ENV ?? "development";
+const localMail = nodeEnv !== "production";
+
 export const env = {
-  nodeEnv: process.env.NODE_ENV ?? "development",
+  nodeEnv,
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+  appUrl: process.env.APP_URL ?? process.env.CORS_ORIGIN ?? "http://localhost:3000",
   uploadsDir: process.env.UPLOADS_DIR ?? path.resolve(process.cwd(), "uploads"),
-  templatesDir: process.env.TEMPLATES_DIR ?? fileURLToPath(new URL("../../templates", import.meta.url))
+  templatesDir: process.env.TEMPLATES_DIR ?? fileURLToPath(new URL("../../templates", import.meta.url)),
+  smtp: {
+    host: process.env.SMTP_HOST || (localMail ? "127.0.0.1" : undefined),
+    port: Number(process.env.SMTP_PORT || (localMail ? 1025 : 587)),
+    secure: process.env.SMTP_SECURE === "true",
+    user: process.env.SMTP_USER,
+    password: process.env.SMTP_PASSWORD,
+    from: process.env.MAIL_FROM || (localMail ? "Практика <practice@localhost>" : undefined)
+  }
 };

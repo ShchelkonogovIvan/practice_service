@@ -1,4 +1,11 @@
 services:
+  mailpit:
+    image: axllent/mailpit:v1.30
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   db:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -31,6 +38,12 @@ services:
       PORT: ${PORT:-4000}
       UPLOADS_DIR: /app/uploads
       TEMPLATES_DIR: /app/templates
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-Практика <practice@localhost>}
     ports:
       - "4000:4000"
     volumes:
@@ -38,6 +51,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
   frontend:
     build:

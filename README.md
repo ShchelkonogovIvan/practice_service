@@ -27,7 +27,7 @@ cd practice_service
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up -d db
+docker compose up -d db mailpit
 pnpm.cmd install
 pnpm.cmd prisma:generate
 pnpm.cmd prisma:migrate
@@ -39,6 +39,7 @@ pnpm.cmd dev
 
 - сайт: http://localhost:3000
 - API: http://localhost:4000/api/health
+- локальная почта: http://localhost:8025
 
 Аккаунт тестового админа:
 

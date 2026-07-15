@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { Prisma } from "@prisma/client";
+import multer from "multer";
 import { HttpError } from "../http/errors.js";
 
 export function notFoundHandler(req: Request, res: Response) {
@@ -9,6 +10,13 @@ export function notFoundHandler(req: Request, res: Response) {
 export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
   if (error instanceof HttpError) {
     return res.status(error.statusCode).json({ message: error.message, details: error.details });
+  }
+
+  if (error instanceof multer.MulterError) {
+    const message = error.code === "LIMIT_FILE_SIZE"
+      ? "Размер отчёта не должен превышать 10 МБ"
+      : "Не удалось загрузить файл отчёта";
+    return res.status(400).json({ message, details: error.code });
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

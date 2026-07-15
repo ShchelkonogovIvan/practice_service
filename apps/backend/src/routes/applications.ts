@@ -1,9 +1,11 @@
 import { Router } from "express";
-import { ApplicationStatus, Prisma, SurveyFieldType, UserRole } from "@prisma/client";
+import { ApplicationStatus, Prisma, UserRole } from "@prisma/client";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, forbidden, notFound } from "../http/errors.js";
 import { prisma } from "../lib/prisma.js";
+import { assertApplicationDecision, validateApplicationAnswers } from "../lib/application-policy.js";
+import { notifyApplicationDecision } from "../lib/notifications.js";
 import { asObject, jsonObjectField, optionalStringField, stringField } from "../utils/body.js";
 
 export const applicationsRouter = Router();
@@ -100,46 +102,6 @@ applicationsRouter.post(
   })
 );
 
-function validateApplicationAnswers(
-  answers: Record<string, unknown>,
-  surveyFields: Array<{
-    id: string;
-    label: string;
-    type: SurveyFieldType;
-    options: unknown;
-    required: boolean;
-  }>
-) {
-  for (const field of surveyFields) {
-    const value = answers[field.id];
-
-    if (field.required && isEmptyAnswer(value)) {
-      throw badRequest(`Field "${field.label}" is required`);
-    }
-
-    if (isEmptyAnswer(value)) {
-      continue;
-    }
-
-    if (typeof value !== "string") {
-      throw badRequest(`Field "${field.label}" must be a string`);
-    }
-
-    if (field.type === SurveyFieldType.SELECT) {
-      const options = Array.isArray(field.options) ? field.options : [];
-      const stringOptions = options.filter((option): option is string => typeof option === "string");
-
-      if (stringOptions.length > 0 && !stringOptions.includes(value)) {
-        throw badRequest(`Unsupported option for field "${field.label}"`);
-      }
-    }
-  }
-}
-
-function isEmptyAnswer(value: unknown) {
-  return value === undefined || value === null || (typeof value === "string" && value.trim().length === 0);
-}
-
 adminApplicationsRouter.use(requireAuth, requireAdmin);
 
 adminApplicationsRouter.get(
@@ -178,9 +140,7 @@ adminApplicationsRouter.patch(
       throw notFound("Application not found");
     }
 
-    if (status === ApplicationStatus.APPROVED && !roleId) {
-      throw badRequest("Role is required to approve application");
-    }
+    assertApplicationDecision(status as ApplicationStatus, roleId, reviewComment);
 
     if (roleId) {
       const role = await prisma.cohortRole.findFirst({
@@ -200,11 +160,19 @@ adminApplicationsRouter.patch(
       },
       include: {
         user: { select: { id: true, email: true } },
+        cohort: { select: { name: true } },
         role: true
       }
     });
 
-    res.json({ application: updated });
+    const notification = await notifyApplicationDecision(
+      updated.user.email,
+      updated.cohort.name,
+      updated.status,
+      updated.reviewComment
+    );
+
+    res.json({ application: updated, notification });
   })
 );
 

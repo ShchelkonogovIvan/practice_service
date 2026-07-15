@@ -3,20 +3,23 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@11.7.0 --activate
 
 FROM base AS deps
-COPY apps/frontend/package.json apps/frontend/pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile=false
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/frontend/package.json ./apps/frontend/package.json
+RUN pnpm install --frozen-lockfile --filter @practice/frontend...
 
 FROM deps AS build
-COPY apps/frontend ./
-RUN mkdir -p public
-RUN pnpm build
+COPY apps/frontend ./apps/frontend
+RUN mkdir -p apps/frontend/public
+RUN pnpm --filter @practice/frontend build
 
 FROM base AS runner
 ENV NODE_ENV=production
-WORKDIR /app
-COPY --from=build /app/package.json ./package.json
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=build /app/.next ./.next
-COPY --from=build /app/public ./public
+WORKDIR /app/apps/frontend
+COPY --from=build /app/node_modules /app/node_modules
+COPY --from=build /app/apps/frontend/node_modules ./node_modules
+COPY --from=build /app/apps/frontend/package.json ./package.json
+COPY --from=build /app/apps/frontend/.next ./.next
+COPY --from=build /app/apps/frontend/public ./public
 EXPOSE 3000
-CMD ["pnpm", "start"]
+CMD ["node", "node_modules/next/dist/bin/next", "start"]

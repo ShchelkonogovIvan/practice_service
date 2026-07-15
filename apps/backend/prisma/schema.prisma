@@ -24,6 +24,12 @@ enum ApplicationStatus {
   REJECTED
 }
 
+enum ReportReviewStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+}
+
 model User {
   id           String                @id @default(cuid())
   email        String                @unique
@@ -138,7 +144,8 @@ model StudentDocumentData {
   reportFileUrl         String?  @map("report_file_url")
   reportFileName        String?  @map("report_file_name")
   reportUploadedAt      DateTime? @map("report_uploaded_at")
-  reportAdminApproved   Boolean  @default(false) @map("report_admin_approved")
+  reportReviewStatus    ReportReviewStatus? @map("report_review_status")
+  reportReviewComment   String?  @map("report_review_comment")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)

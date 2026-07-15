@@ -4,6 +4,7 @@ import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, notFound } from "../http/errors.js";
 import { prisma } from "../lib/prisma.js";
+import { notifyTestTaskPublished } from "../lib/notifications.js";
 import { asObject, dateField, optionalStringField, stringField } from "../utils/body.js";
 
 export const cohortsRouter = Router();
@@ -200,7 +201,8 @@ cohortsRouter.put(
     const published = body.published === true;
 
     const cohort = await prisma.cohort.findUnique({
-      where: { id: req.params.cohortId }
+      where: { id: req.params.cohortId },
+      include: { testTask: true }
     });
 
     if (!cohort) {
@@ -211,7 +213,7 @@ cohortsRouter.put(
       where: { cohortId: cohort.id },
       update: {
         content,
-        publishedAt: published ? new Date() : null
+        publishedAt: published ? cohort.testTask?.publishedAt ?? new Date() : null
       },
       create: {
         cohortId: cohort.id,
@@ -220,7 +222,19 @@ cohortsRouter.put(
       }
     });
 
-    res.json({ testTask });
+    let notification = null;
+    if (published && !cohort.testTask?.publishedAt) {
+      const applications = await prisma.application.findMany({
+        where: { cohortId: cohort.id },
+        select: { user: { select: { email: true } } }
+      });
+      notification = await notifyTestTaskPublished(
+        applications.map((application) => application.user.email),
+        cohort.name
+      );
+    }
+
+    res.json({ testTask, notification });
   })
 );
 

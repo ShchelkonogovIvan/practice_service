@@ -72,10 +72,13 @@ export type StudentDocumentData = {
   reportFileUrl: string | null;
   reportFileName: string | null;
   reportUploadedAt: string | null;
-  reportAdminApproved: boolean;
+  reportReviewStatus: ReportReviewStatus | null;
+  reportReviewComment: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type ReportReviewStatus = "PENDING" | "APPROVED" | "CHANGES_REQUESTED";
 
 export type DocumentReadiness = {
   individualReady: boolean;
@@ -368,10 +371,15 @@ export async function saveAdminReview(
   );
 }
 
-export async function setReportApproval(cohortId: string, userId: string, approved: boolean) {
+export async function setReportReview(
+  cohortId: string,
+  userId: string,
+  status: ReportReviewStatus,
+  comment: string
+) {
   return api<{ data: StudentDocumentData; readiness: DocumentReadiness }>(
-    `/admin/cohorts/${cohortId}/documents/${userId}/report-approval`,
-    { method: "PATCH", body: JSON.stringify({ approved }) }
+    `/admin/cohorts/${cohortId}/documents/${userId}/report-review`,
+    { method: "PATCH", body: JSON.stringify({ status, comment }) }
   );
 }
 

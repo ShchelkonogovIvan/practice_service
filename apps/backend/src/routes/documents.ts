@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, unlink } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { ApplicationStatus } from "@prisma/client";
+import { ApplicationStatus, ReportReviewStatus } from "@prisma/client";
 import { Router } from "express";
 import multer from "multer";
 import { env } from "../config/env.js";
@@ -11,6 +11,9 @@ import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, forbidden, notFound } from "../http/errors.js";
 import { requireApprovedApplication } from "../lib/cohort-access.js";
 import { generatePracticeDocument, PracticeDocumentKind } from "../lib/document-generator.js";
+import { documentReadiness, writableReviewFields, writableStudentFields } from "../lib/document-readiness.js";
+import { notifyReportReview } from "../lib/notifications.js";
+import { assertValidReportFile } from "../lib/report-file.js";
 import { prisma } from "../lib/prisma.js";
 import { asObject, stringField } from "../utils/body.js";
 
@@ -44,42 +47,6 @@ const upload = multer({
     callback(null, true);
   }
 });
-
-const writableStudentFields = [
-  "studentFio",
-  "group",
-  "directionCode",
-  "directionName",
-  "programName",
-  "specialty",
-  "practiceTopic",
-  "mainStageTasks",
-  "supervisorUrfuName"
-] as const;
-
-const writableReviewFields = [
-  "reviewActivities",
-  "reviewCharacteristic",
-  "reviewEmployed",
-  "reviewNextPractice",
-  "reviewEmploymentOffer",
-  "reviewSuggestions",
-  "reviewGrade"
-] as const;
-
-const individualFields = [
-  "studentFio",
-  "group",
-  "directionCode",
-  "directionName",
-  "programName",
-  "practiceTopic",
-  "mainStageTasks",
-  "supervisorUrfuName"
-] as const;
-
-const titleFields = ["studentFio", "group", "specialty", "practiceTopic"] as const;
-const reviewStudentFields = ["studentFio", "group"] as const;
 
 documentsRouter.use(requireAuth);
 
@@ -120,42 +87,53 @@ documentsRouter.put(
 
 documentsRouter.post(
   "/cohorts/:cohortId/documents/me/report",
+  asyncHandler(async (req, _res, next) => {
+    await requireApprovedApplication(req.user!.id, req.params.cohortId);
+    next();
+  }),
   upload.single("report"),
   asyncHandler(async (req, res) => {
-    await requireApprovedApplication(req.user!.id, req.params.cohortId);
     if (!req.file) {
       throw badRequest("Выберите файл отчёта");
     }
 
-    const existing = await findDocumentData(req.user!.id, req.params.cohortId);
-    const reportFileName = decodeUploadFilename(req.file.originalname);
-    const data = await prisma.studentDocumentData.upsert({
-      where: {
-        userId_cohortId: {
+    try {
+      await assertValidReportFile(req.file.path, req.file.originalname);
+      const existing = await findDocumentData(req.user!.id, req.params.cohortId);
+      const reportFileName = decodeUploadFilename(req.file.originalname);
+      const data = await prisma.studentDocumentData.upsert({
+        where: {
+          userId_cohortId: {
+            userId: req.user!.id,
+            cohortId: req.params.cohortId
+          }
+        },
+        update: {
+          reportFileUrl: `reports/${req.file.filename}`,
+          reportFileName,
+          reportUploadedAt: new Date(),
+          reportReviewStatus: ReportReviewStatus.PENDING,
+          reportReviewComment: null
+        },
+        create: {
           userId: req.user!.id,
-          cohortId: req.params.cohortId
+          cohortId: req.params.cohortId,
+          reportFileUrl: `reports/${req.file.filename}`,
+          reportFileName,
+          reportUploadedAt: new Date(),
+          reportReviewStatus: ReportReviewStatus.PENDING
         }
-      },
-      update: {
-        reportFileUrl: `reports/${req.file.filename}`,
-        reportFileName,
-        reportUploadedAt: new Date(),
-        reportAdminApproved: false
-      },
-      create: {
-        userId: req.user!.id,
-        cohortId: req.params.cohortId,
-        reportFileUrl: `reports/${req.file.filename}`,
-        reportFileName,
-        reportUploadedAt: new Date()
+      });
+
+      if (existing?.reportFileUrl) {
+        await removeReport(existing.reportFileUrl);
       }
-    });
 
-    if (existing?.reportFileUrl) {
-      await removeReport(existing.reportFileUrl);
+      res.status(201).json({ data, readiness: documentReadiness(data) });
+    } catch (error) {
+      await unlink(req.file.path).catch(() => undefined);
+      throw error;
     }
-
-    res.status(201).json({ data, readiness: documentReadiness(data) });
   })
 );
 
@@ -257,12 +235,17 @@ adminDocumentsRouter.put(
 );
 
 adminDocumentsRouter.patch(
-  "/cohorts/:cohortId/documents/:userId/report-approval",
+  "/cohorts/:cohortId/documents/:userId/report-review",
   asyncHandler(async (req, res) => {
     await requireApprovedApplication(req.params.userId, req.params.cohortId);
     const body = asObject(req.body);
-    if (typeof body.approved !== "boolean") {
-      throw badRequest('Field "approved" must be a boolean');
+    const status = stringField(body, "status").toUpperCase();
+    const comment = typeof body.comment === "string" ? body.comment.trim() || null : null;
+    if (!Object.values(ReportReviewStatus).includes(status as ReportReviewStatus)) {
+      throw badRequest(`Unsupported report review status: ${status}`);
+    }
+    if (status === ReportReviewStatus.CHANGES_REQUESTED && !comment) {
+      throw badRequest("Комментарий обязателен, если отчёт требует исправлений");
     }
 
     const existing = await findDocumentData(req.params.userId, req.params.cohortId);
@@ -272,10 +255,24 @@ adminDocumentsRouter.patch(
 
     const data = await prisma.studentDocumentData.update({
       where: { id: existing.id },
-      data: { reportAdminApproved: body.approved }
+      data: {
+        reportReviewStatus: status as ReportReviewStatus,
+        reportReviewComment: comment
+      }
     });
 
-    res.json({ data, readiness: documentReadiness(data) });
+    const [user, cohort] = await Promise.all([
+      prisma.user.findUniqueOrThrow({ where: { id: req.params.userId }, select: { email: true } }),
+      prisma.cohort.findUniqueOrThrow({ where: { id: req.params.cohortId }, select: { name: true } })
+    ]);
+    const notification = await notifyReportReview(
+      user.email,
+      cohort.name,
+      status as ReportReviewStatus,
+      comment
+    );
+
+    res.json({ data, readiness: documentReadiness(data), notification });
   })
 );
 
@@ -366,58 +363,6 @@ function pickStrings<T extends readonly string[]>(body: Record<string, unknown>,
     }
     return result;
   }, {});
-}
-
-function hasFields(data: Record<string, unknown> | null, fields: readonly string[]) {
-  return Boolean(data && fields.every((field) => typeof data[field] === "string" && data[field].trim().length > 0));
-}
-
-function documentReadiness(data: Record<string, unknown> | null) {
-  const individualReady = hasFields(data, individualFields);
-  const reviewReady = hasFields(data, reviewStudentFields) && hasFields(data, writableReviewFields);
-  const reportUploaded = Boolean(data?.reportFileUrl);
-  const reportApproved = data?.reportAdminApproved === true;
-  const titleReady = hasFields(data, titleFields) && reportUploaded && reportApproved;
-
-  return {
-    individualReady,
-    reviewReady,
-    titleReady,
-    reportUploaded,
-    reportApproved,
-    individualReason: individualReady ? null : missingFieldsReason(data, individualFields),
-    reviewReason: reviewReady
-      ? null
-      : hasFields(data, reviewStudentFields)
-        ? "Отзыв ещё не заполнен администратором"
-        : missingFieldsReason(data, reviewStudentFields),
-    titleReason: titleReady
-      ? null
-      : !hasFields(data, titleFields)
-        ? missingFieldsReason(data, titleFields)
-        : !reportUploaded
-          ? "Сначала загрузите отчёт о практике"
-          : "Администратор ещё не проверил отчёт"
-  };
-}
-
-const fieldLabels: Record<string, string> = {
-  studentFio: "ФИО",
-  group: "группа",
-  directionCode: "код направления",
-  directionName: "наименование направления",
-  programName: "образовательная программа",
-  specialty: "специальность",
-  practiceTopic: "тема практики",
-  mainStageTasks: "работы основного этапа",
-  supervisorUrfuName: "руководитель практики от УрФУ"
-};
-
-function missingFieldsReason(data: Record<string, unknown> | null, fields: readonly string[]) {
-  const missing = fields
-    .filter((field) => typeof data?.[field] !== "string" || !data[field].trim())
-    .map((field) => fieldLabels[field] ?? field);
-  return `Заполните: ${missing.join(", ")}`;
 }
 
 function parseDocumentKind(value: string): PracticeDocumentKind {

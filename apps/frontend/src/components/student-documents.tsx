@@ -140,9 +140,15 @@ export function StudentDocuments({ application }: { application: Application }) 
           <p className="mt-1 text-sm text-muted">Когорта: {application.cohort.name}</p>
         </div>
         <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
-          {readiness.reportApproved ? "Отчёт проверен" : readiness.reportUploaded ? "Отчёт на проверке" : "Отчёт не загружен"}
+          {reportStatusLabel(data?.reportReviewStatus ?? null, readiness.reportUploaded)}
         </span>
       </div>
+
+      {data?.reportReviewComment ? (
+        <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${data.reportReviewStatus === "CHANGES_REQUESTED" ? "border-red-200 bg-red-50 text-red-800" : "border-border bg-slate-50 text-foreground"}`}>
+          <span className="font-medium">Комментарий администратора:</span> {data.reportReviewComment}
+        </div>
+      ) : null}
 
       {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
       {message ? <p className="mt-4 text-sm text-green-700">{message}</p> : null}
@@ -217,4 +223,11 @@ function formatDate(value: string) {
 
 function errorMessage(caught: unknown) {
   return caught instanceof Error ? caught.message : "Не удалось выполнить действие";
+}
+
+function reportStatusLabel(status: StudentDocumentData["reportReviewStatus"], uploaded: boolean) {
+  if (!uploaded) return "Отчёт не загружен";
+  if (status === "APPROVED") return "Отчёт одобрен";
+  if (status === "CHANGES_REQUESTED") return "Требуются исправления";
+  return "Отчёт на проверке";
 }

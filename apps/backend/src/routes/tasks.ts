@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { badRequest, forbidden, notFound } from "../http/errors.js";
 import { requireApprovedApplication } from "../lib/cohort-access.js";
 import { prisma } from "../lib/prisma.js";
+import { assertCanEditTaskCard, assertTaskDateAllowed, parseTaskDate } from "../lib/task-policy.js";
 import { asObject, optionalStringField, stringField } from "../utils/body.js";
 
 export const tasksRouter = Router();
@@ -102,18 +103,7 @@ tasksRouter.post(
     const body = asObject(req.body);
     const date = parseTaskDate(stringField(body, "date"));
 
-    const dateKey = formatDateKey(date);
-    if (
-      dateKey < formatDateKey(application.cohort.practiceStart) ||
-      dateKey > formatDateKey(application.cohort.practiceEnd)
-    ) {
-      throw badRequest("Task date must be within the cohort practice period");
-    }
-
-    const dayOfWeek = date.getUTCDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      throw badRequest("Task date must be a working day");
-    }
+    assertTaskDateAllowed(date, application.cohort.practiceStart, application.cohort.practiceEnd);
 
     const card = await prisma.taskCard.create({
       data: {
@@ -139,9 +129,7 @@ tasksRouter.patch(
     if (!card) {
       throw notFound("Task card not found");
     }
-    if (req.user!.role !== UserRole.ADMIN && card.userId !== req.user!.id) {
-      throw forbidden("You can edit only your own task cards");
-    }
+    assertCanEditTaskCard(req.user!.role, req.user!.id, card.userId);
     if (req.user!.role !== UserRole.ADMIN) {
       await requireApprovedApplication(req.user!.id, card.cohortId);
     }
@@ -159,22 +147,6 @@ tasksRouter.patch(
     res.json({ card: updated });
   })
 );
-
-function parseTaskDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw badRequest("Task date must be in YYYY-MM-DD format");
-  }
-
-  const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime()) || formatDateKey(date) !== value) {
-    throw badRequest("Task date must be valid");
-  }
-  return date;
-}
-
-function formatDateKey(value: Date) {
-  return value.toISOString().slice(0, 10);
-}
 
 function taskTextField(body: Record<string, unknown>, name: string, nullable: boolean) {
   const value = body[name];
