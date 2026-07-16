@@ -398,7 +398,7 @@ function templateData(
     specialty: data.specialty ?? "",
     practice_topic: data.practiceTopic ?? "",
     main_stage_tasks: data.mainStageTasks ?? "",
-    supervisor_urfu_name: data.supervisorUrfuName ?? "",
+    supervisor_urfu_name: "Корнякова Елена Михайловна",
     review_activities: data.reviewActivities ?? "",
     review_characteristic: data.reviewCharacteristic ?? "",
     review_employed: data.reviewEmployed ?? "",

@@ -10,8 +10,7 @@ const studentFields = {
   programName: "Программная инженерия",
   specialty: "Программная инженерия",
   practiceTopic: "Разработка сервиса практики",
-  mainStageTasks: "Разработка и тестирование",
-  supervisorUrfuName: "Петров П.П."
+  mainStageTasks: "Разработка и тестирование"
 };
 
 const reviewFields = {

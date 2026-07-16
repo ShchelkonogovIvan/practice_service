@@ -16,7 +16,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 type FormValues = Record<
-  "studentFio" | "group" | "directionCode" | "directionName" | "programName" | "specialty" | "practiceTopic" | "mainStageTasks" | "supervisorUrfuName",
+  "studentFio" | "group" | "directionCode" | "directionName" | "programName" | "specialty" | "practiceTopic" | "mainStageTasks",
   string
 >;
 
@@ -28,8 +28,7 @@ const emptyForm: FormValues = {
   programName: "",
   specialty: "",
   practiceTopic: "",
-  mainStageTasks: "",
-  supervisorUrfuName: ""
+  mainStageTasks: ""
 };
 
 const emptyReadiness: DocumentReadiness = {
@@ -161,7 +160,6 @@ export function StudentDocuments({ application }: { application: Application }) 
           <Field label="Наименование направления" value={form.directionName} onChange={(value) => setForm({ ...form, directionName: value })} onBlur={autosave} />
           <Field label="Образовательная программа" value={form.programName} onChange={(value) => setForm({ ...form, programName: value })} onBlur={autosave} />
           <Field label="Специальность для титульного листа" value={form.specialty} onChange={(value) => setForm({ ...form, specialty: value })} onBlur={autosave} />
-          <Field label="Руководитель практики от УрФУ" value={form.supervisorUrfuName} onChange={(value) => setForm({ ...form, supervisorUrfuName: value })} onBlur={autosave} />
         </div>
         <Field label="Тема практики" value={form.practiceTopic} onChange={(value) => setForm({ ...form, practiceTopic: value })} onBlur={autosave} />
         <label className="grid gap-2 text-sm font-medium">

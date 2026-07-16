@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, Download, FileText, Save, X } from "lucide-react";
+import { AlertTriangle, Check, Download, FileText, RotateCcw, Save, X } from "lucide-react";
 import {
   AdminDocumentRow,
   Cohort,
@@ -73,7 +73,7 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
   }
 
   async function reviewReport(row: AdminDocumentRow, status: ReportReviewStatus) {
-    const comment = comments[row.user.id]?.trim() ?? "";
+    const comment = status === "PENDING" ? "" : comments[row.user.id]?.trim() ?? "";
     if (status === "CHANGES_REQUESTED" && !comment) {
       setError("Добавьте комментарий с необходимыми исправлениями");
       return;
@@ -84,7 +84,13 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
     setMessage(null);
     try {
       await setReportReview(cohort.id, row.user.id, status, comment);
-      setMessage(status === "APPROVED" ? "Отчёт одобрен" : "Отчёт возвращён на доработку");
+      setMessage(
+        status === "APPROVED"
+          ? "Отчёт одобрен"
+          : status === "CHANGES_REQUESTED"
+            ? "Отчёт возвращён на доработку"
+            : "Допуск к титульному листу снят"
+      );
       await load();
     } catch (caught) {
       setError(errorMessage(caught));
@@ -115,10 +121,50 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
       {message ? <p className="text-sm text-green-700">{message}</p> : null}
       {!loading && rows.length === 0 ? <p className="text-sm text-muted">Одобренных заявок пока нет.</p> : null}
 
+      {!loading && rows.length > 0 ? (
+        <div className="overflow-x-auto rounded-md border border-border bg-white">
+          <table className="w-full min-w-[820px] border-collapse text-sm">
+            <thead className="bg-slate-50 text-left text-xs text-muted">
+              <tr>
+                <th className="px-3 py-3 font-semibold">Практикант</th>
+                <th className="px-3 py-3 text-center font-semibold">ИЗ</th>
+                <th className="px-3 py-3 text-center font-semibold">Отзыв</th>
+                <th className="px-3 py-3 text-center font-semibold">Титульный лист</th>
+                <th className="px-3 py-3 font-semibold">Отчёт</th>
+                <th className="px-3 py-3 text-right font-semibold">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const expanded = expandedUserId === row.user.id;
+                return (
+                  <tr key={row.user.id} className="border-t border-border align-middle">
+                    <td className="px-3 py-3">
+                      <p className="font-medium">{row.data?.studentFio || row.user.email}</p>
+                      <p className="mt-1 text-xs text-muted">{row.role?.name ?? row.user.email}</p>
+                    </td>
+                    <td className="px-3 py-3 text-center"><Status ready={row.readiness.individualReady} label="ИЗ" compact /></td>
+                    <td className="px-3 py-3 text-center"><Status ready={row.readiness.reviewReady} label="Отзыв" compact /></td>
+                    <td className="px-3 py-3 text-center"><Status ready={row.readiness.titleReady} label="Титул" compact /></td>
+                    <td className="px-3 py-3"><ReportStatus status={row.data?.reportReviewStatus ?? null} uploaded={row.readiness.reportUploaded} /></td>
+                    <td className="px-3 py-3 text-right">
+                      <Button type="button" variant="secondary" onClick={() => setExpandedUserId(expanded ? null : row.user.id)}>
+                        <FileText className="mr-2 h-4 w-4" />{expanded ? "Свернуть" : "Открыть"}
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
       {rows.map((row) => {
         const form = forms[row.user.id] ?? emptyReview;
         const expanded = expandedUserId === row.user.id;
         const saving = savingUserId === row.user.id;
+        if (!expanded) return null;
         return (
           <div key={row.user.id} className="rounded-md border border-border bg-white p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -162,6 +208,11 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
                     <Button type="button" variant="secondary" disabled={!row.readiness.reportUploaded || saving || !(comments[row.user.id]?.trim())} onClick={() => reviewReport(row, "CHANGES_REQUESTED")}>
                       <AlertTriangle className="mr-2 h-4 w-4" />Вернуть на доработку
                     </Button>
+                    {row.data?.reportReviewStatus === "APPROVED" ? (
+                      <Button type="button" variant="secondary" disabled={saving} onClick={() => reviewReport(row, "PENDING")}>
+                        <RotateCcw className="mr-2 h-4 w-4" />Снять допуск
+                      </Button>
+                    ) : null}
                   </div>
                 </section>
 
@@ -189,8 +240,8 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
   );
 }
 
-function Status({ ready, label }: { ready: boolean; label: string }) {
-  return <span className="inline-flex items-center gap-1">{ready ? <Check className="h-3.5 w-3.5 text-green-700" /> : <X className="h-3.5 w-3.5 text-red-700" />}{label}</span>;
+function Status({ ready, label, compact = false }: { ready: boolean; label: string; compact?: boolean }) {
+  return <span className="inline-flex items-center gap-1" title={`${label}: ${ready ? "готово" : "не готово"}`}>{ready ? <Check className="h-4 w-4 text-green-700" /> : <X className="h-4 w-4 text-red-700" />}{compact ? <span className="sr-only">{label}</span> : label}</span>;
 }
 
 function ReportStatus({ status, uploaded }: { status: ReportReviewStatus | null; uploaded: boolean }) {

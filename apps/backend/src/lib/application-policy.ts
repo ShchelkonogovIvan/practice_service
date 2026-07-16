@@ -35,13 +35,10 @@ export function validateApplicationAnswers(answers: Record<string, unknown>, sur
 export function assertApplicationDecision(
   status: "PENDING" | "APPROVED" | "REJECTED",
   roleId?: string,
-  reviewComment?: string
+  _reviewComment?: string
 ) {
   if (status === "APPROVED" && !roleId) {
     throw badRequest("Role is required to approve application");
-  }
-  if (status === "REJECTED" && !reviewComment) {
-    throw badRequest("Review comment is required to reject application");
   }
 }
 

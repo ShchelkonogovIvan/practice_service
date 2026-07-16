@@ -40,12 +40,15 @@ export async function notifyReportReview(
   status: ReportReviewStatus,
   comment: string | null
 ) {
-  const statusText = status === "APPROVED" ? "одобрен" : status === "CHANGES_REQUESTED" ? "требует исправлений" : "направлен на повторную проверку";
+  const statusText = status === "APPROVED" ? "одобрен" : status === "CHANGES_REQUESTED" ? "требует исправлений" : "допуск снят";
+  const resultText = status === "PENDING"
+    ? `Допуск к скачиванию титульного листа по когорте «${cohortName}» снят.`
+    : `Ваш отчёт по когорте «${cohortName}» ${statusText}.`;
   return sendEmail({
     to: email,
     subject: `Проверка отчёта: ${statusText}`,
     text: [
-      `Ваш отчёт по когорте «${cohortName}» ${statusText}.`,
+      resultText,
       comment ? `Комментарий администратора: ${comment}` : null,
       `Открыть документы: ${env.appUrl}/dashboard`
     ].filter(Boolean).join("\n\n")

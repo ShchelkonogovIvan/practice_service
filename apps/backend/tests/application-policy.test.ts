@@ -19,8 +19,8 @@ test("approval requires a cohort role", () => {
   assert.doesNotThrow(() => assertApplicationDecision("APPROVED", "role-1"));
 });
 
-test("rejection requires an administrator comment", () => {
-  assertHttpError(() => assertApplicationDecision("REJECTED"), 400);
+test("rejection allows an optional administrator comment", () => {
+  assert.doesNotThrow(() => assertApplicationDecision("REJECTED"));
   assert.doesNotThrow(() => assertApplicationDecision("REJECTED", undefined, "Не заполнено обязательное поле"));
 });
 

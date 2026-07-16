@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ClipboardList, FileText, ListChecks, LogOut, Plus, Settings } from "lucide-react";
+import { ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, ListChecks, LogOut, Plus, Settings, Trash2 } from "lucide-react";
 import {
   AdminApplication,
   Application,
@@ -34,11 +34,21 @@ type CohortForm = {
   applicationEnd: string;
   practiceStart: string;
   practiceEnd: string;
-  surveyText: string;
+  surveyFields: SurveyFieldDraft[];
   rolesText: string;
   testTaskContent: string;
   testTaskPublished: boolean;
 };
+
+type SurveyFieldDraft = {
+  key: string;
+  label: string;
+  type: "TEXT" | "TEXTAREA" | "SELECT";
+  optionsText: string;
+  required: boolean;
+};
+
+let surveyDraftSequence = 0;
 
 type Answers = Record<string, string>;
 type AnswersByCohort = Record<string, Answers>;
@@ -51,7 +61,12 @@ const initialForm: CohortForm = {
   applicationEnd: "",
   practiceStart: "",
   practiceEnd: "",
-  surveyText: "ФИО\nГруппа\nЖелаемая роль | Frontend, Backend, Аналитик\nСтек технологий",
+  surveyFields: [
+    surveyDraft("ФИО"),
+    surveyDraft("Группа"),
+    surveyDraft("Желаемая роль", "SELECT", "Frontend, Backend, Аналитик"),
+    surveyDraft("Стек технологий", "TEXTAREA")
+  ],
   rolesText: "Frontend\nBackend\nАналитик",
   testTaskContent: "",
   testTaskPublished: false
@@ -72,9 +87,12 @@ export function DashboardShell() {
   const [applying, setApplying] = useState(false);
   const [expandedCohortId, setExpandedCohortId] = useState<string | null>(null);
   const [studentTab, setStudentTab] = useState<StudentTab>("applications");
+  const [studentCohortId, setStudentCohortId] = useState("");
 
   const isAdmin = user?.role === "ADMIN";
-  const approvedApplication = applications.find((application) => application.status === "APPROVED");
+  const approvedApplications = applications.filter((application) => application.status === "APPROVED");
+  const approvedApplication = approvedApplications.find((application) => application.cohort.id === studentCohortId)
+    ?? approvedApplications[0];
   const editableCohorts = isAdmin
     ? []
     : activeCohorts.filter((item) => applicationForCohort(applications, item.id)?.status !== "APPROVED");
@@ -82,6 +100,12 @@ export function DashboardShell() {
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  useEffect(() => {
+    if (!approvedApplications.some((application) => application.cohort.id === studentCohortId)) {
+      setStudentCohortId(approvedApplications[0]?.cohort.id ?? "");
+    }
+  }, [applications, studentCohortId]);
 
   async function loadDashboard() {
     setLoading(true);
@@ -130,7 +154,7 @@ export function DashboardShell() {
         applicationEnd: form.applicationEnd,
         practiceStart: form.practiceStart,
         practiceEnd: form.practiceEnd,
-        surveyFields: parseSurveyText(form.surveyText),
+        surveyFields: serializeSurveyFields(form.surveyFields),
         roles: parseLines(form.rolesText),
         testTaskContent: form.testTaskContent || undefined,
         testTaskPublished: form.testTaskPublished
@@ -206,7 +230,13 @@ export function DashboardShell() {
       {!loading && (
         <div className="grid gap-4">
           <ProfileCard user={user} />
-          {!isAdmin ? <ActiveCohortCard application={approvedApplication} /> : null}
+          {!isAdmin ? (
+            <ActiveCohortCard
+              applications={approvedApplications}
+              selectedCohortId={approvedApplication?.cohort.id ?? ""}
+              onChange={setStudentCohortId}
+            />
+          ) : null}
           {isAdmin ? (
             <AdminCohorts
               cohorts={cohorts}
@@ -286,15 +316,34 @@ function ProfileCard({ user }: { user: AuthUser | null }) {
   );
 }
 
-function ActiveCohortCard({ application }: { application?: Application }) {
+function ActiveCohortCard({
+  applications,
+  selectedCohortId,
+  onChange
+}: {
+  applications: Application[];
+  selectedCohortId: string;
+  onChange: (cohortId: string) => void;
+}) {
   return (
     <Card className="p-5">
-      <h2 className="text-lg font-semibold">Активная когорта</h2>
-      <p className="mt-2 text-sm text-muted">
-        {application
-          ? application.cohort.name
-          : "Активной когорты пока нет. Она появится после одобрения заявки."}
-      </p>
+      <h2 className="text-lg font-semibold">Рабочая когорта</h2>
+      {applications.length ? (
+        <label className="mt-3 grid gap-2 text-sm font-medium">
+          Документы и задачи
+          <select
+            className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            value={selectedCohortId}
+            onChange={(event) => onChange(event.target.value)}
+          >
+            {applications.map((application) => (
+              <option key={application.id} value={application.cohort.id}>{application.cohort.name}</option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className="mt-2 text-sm text-muted">Рабочая когорта появится после одобрения заявки.</p>
+      )}
     </Card>
   );
 }
@@ -498,7 +547,6 @@ function AdminCohorts({
 }) {
   const [selectedCohortId, setSelectedCohortId] = useState(cohorts[0]?.id ?? "");
   const [showCreateForm, setShowCreateForm] = useState(cohorts.length === 0);
-  const surveyPreview = useMemo(() => parseSurveyText(form.surveyText), [form.surveyText]);
   const rolesPreview = useMemo(() => parseLines(form.rolesText), [form.rolesText]);
   const selectedCohort = cohorts.find((cohort) => cohort.id === selectedCohortId) ?? cohorts[0];
   const copySource = selectedCohort ?? cohorts[0];
@@ -512,7 +560,7 @@ function AdminCohorts({
   function copySettingsFromCohort(cohort: Cohort) {
     setForm((current) => ({
       ...current,
-      surveyText: surveyFieldsToText(cohort),
+      surveyFields: surveyDraftsFromCohort(cohort),
       rolesText: cohortRolesToText(cohort),
       testTaskContent: cohort.testTask?.content ?? current.testTaskContent,
       testTaskPublished: Boolean(cohort.testTask?.publishedAt)
@@ -587,15 +635,10 @@ function AdminCohorts({
             />
           </div>
 
-          <TextAreaField
-            label="Поля анкеты"
-            value={form.surveyText}
-            rows={5}
-            onChange={(value) => setForm((current) => ({ ...current, surveyText: value }))}
+          <SurveyEditor
+            fields={form.surveyFields}
+            onChange={(surveyFields) => setForm((current) => ({ ...current, surveyFields }))}
           />
-          <p className="text-xs leading-5 text-muted">
-            Для списка вариантов пишем так: Вопрос | вариант 1, вариант 2
-          </p>
 
           <TextAreaField
             label="Роли/треки"
@@ -622,7 +665,7 @@ function AdminCohorts({
 
           <div className="rounded-md border border-border bg-white p-3 text-sm">
             <p className="font-medium">Будет создано:</p>
-            <p className="mt-2 text-muted">Поля анкеты: {surveyPreview.length}</p>
+            <p className="mt-2 text-muted">Поля анкеты: {form.surveyFields.filter((field) => field.label.trim()).length}</p>
             <p className="text-muted">Роли: {rolesPreview.length ? rolesPreview.join(", ") : "не заданы"}</p>
           </div>
 
@@ -643,7 +686,7 @@ function AdminCohorts({
 
 function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise<void> }) {
   const [activeTab, setActiveTab] = useState<AdminTab>("applications");
-  const [surveyText, setSurveyText] = useState(surveyFieldsToText(cohort));
+  const [surveyFields, setSurveyFields] = useState(surveyDraftsFromCohort(cohort));
   const [roleNames, setRoleNames] = useState(cohort.roles.map((role) => role.name));
   const [newRole, setNewRole] = useState("");
   const [content, setContent] = useState(cohort.testTask?.content ?? "");
@@ -670,7 +713,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
     setSettingsMessage(null);
 
     try {
-      await updateCohortSurvey(cohort.id, parseSurveyText(surveyText));
+      await updateCohortSurvey(cohort.id, serializeSurveyFields(surveyFields));
       const result = await updateCohortRoles(cohort.id, roleNames);
       await onSaved();
       setSettingsMessage(
@@ -710,9 +753,16 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
               Анкета: {cohort.surveyFields.length} · Роли: {cohort.roles.length}
             </p>
           </div>
-          <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
-            {cohort.testTask?.publishedAt ? "ТЗ опубликовано" : "ТЗ не опубликовано"}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
+              {cohort.testTask?.publishedAt ? "ТЗ опубликовано" : "ТЗ не опубликовано"}
+            </span>
+            <Button asChild type="button" variant="secondary">
+              <a href={`/apply/${cohort.id}`} target="_blank" rel="noreferrer">
+                <ExternalLink className="mr-2 h-4 w-4" />Публичная анкета
+              </a>
+            </Button>
+          </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
           <p>Прием заявок: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}</p>
@@ -743,15 +793,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
           </div>
 
           <div className="mt-4 grid gap-3">
-            <TextAreaField
-              label="Поля анкеты"
-              value={surveyText}
-              rows={5}
-              onChange={setSurveyText}
-            />
-            <p className="text-xs leading-5 text-muted">
-              Для списка вариантов пишем так: Вопрос | вариант 1, вариант 2. Порядок строк будет порядком полей в анкете.
-            </p>
+            <SurveyEditor fields={surveyFields} onChange={setSurveyFields} />
 
             <div className="grid gap-2">
               <p className="text-sm font-medium">Роли/треки</p>
@@ -1064,6 +1106,97 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
   );
 }
 
+function SurveyEditor({
+  fields,
+  onChange
+}: {
+  fields: SurveyFieldDraft[];
+  onChange: (fields: SurveyFieldDraft[]) => void;
+}) {
+  function updateField(index: number, values: Partial<SurveyFieldDraft>) {
+    onChange(fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...values } : field));
+  }
+
+  function moveField(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= fields.length) return;
+    const next = [...fields];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    onChange(next);
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Поля анкеты</p>
+          <p className="mt-1 text-xs text-muted">Настройте тип, обязательность и порядок вопросов.</p>
+        </div>
+        <Button type="button" variant="secondary" onClick={() => onChange([...fields, surveyDraft()])}>
+          <Plus className="mr-2 h-4 w-4" />Добавить поле
+        </Button>
+      </div>
+
+      {fields.length === 0 ? <p className="text-sm text-muted">В анкете пока нет полей.</p> : null}
+
+      {fields.map((field, index) => (
+        <div key={field.key} className="grid gap-3 rounded-md border border-border bg-white p-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+            <label className="grid gap-2 text-sm font-medium">
+              Вопрос
+              <Input value={field.label} onChange={(event) => updateField(index, { label: event.target.value })} />
+            </label>
+            <label className="grid gap-2 text-sm font-medium">
+              Тип поля
+              <select
+                className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                value={field.type}
+                onChange={(event) => updateField(index, { type: event.target.value as SurveyFieldDraft["type"] })}
+              >
+                <option value="TEXT">Короткий текст</option>
+                <option value="TEXTAREA">Длинный текст</option>
+                <option value="SELECT">Выбор из списка</option>
+              </select>
+            </label>
+            <div className="flex items-end gap-1">
+              <IconButton label="Переместить выше" disabled={index === 0} onClick={() => moveField(index, -1)}><ArrowUp className="h-4 w-4" /></IconButton>
+              <IconButton label="Переместить ниже" disabled={index === fields.length - 1} onClick={() => moveField(index, 1)}><ArrowDown className="h-4 w-4" /></IconButton>
+              <IconButton label="Удалить поле" onClick={() => onChange(fields.filter((_, fieldIndex) => fieldIndex !== index))}><Trash2 className="h-4 w-4" /></IconButton>
+            </div>
+          </div>
+
+          {field.type === "SELECT" ? (
+            <label className="grid gap-2 text-sm font-medium">
+              Варианты ответа через запятую
+              <Input placeholder="Frontend, Backend, Аналитик" value={field.optionsText} onChange={(event) => updateField(index, { optionsText: event.target.value })} />
+            </label>
+          ) : null}
+
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={field.required} onChange={(event) => updateField(index, { required: event.target.checked })} />
+            Обязательное поле
+          </label>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function IconButton({ label, disabled, onClick, children }: { label: string; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      className="flex h-10 w-10 items-center justify-center rounded-md border border-border text-muted transition hover:bg-slate-50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
 function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="grid gap-2 text-sm font-medium">
@@ -1100,15 +1233,6 @@ function TextAreaField({
   );
 }
 
-function surveyFieldsToText(cohort: Cohort) {
-  return cohort.surveyFields
-    .map((field) => {
-      const options = getStringOptions(field.options);
-      return options.length ? `${field.label} | ${options.join(", ")}` : field.label;
-    })
-    .join("\n");
-}
-
 function cohortRolesToText(cohort: Cohort) {
   return cohort.roles.map((role) => role.name).join("\n");
 }
@@ -1120,22 +1244,43 @@ function parseLines(value: string) {
     .filter(Boolean);
 }
 
-function parseSurveyText(value: string) {
-  return parseLines(value).map((line, index) => {
-    const [label, rawOptions] = line.split("|").map((part) => part.trim());
-    const options = rawOptions
-      ?.split(",")
-      .map((option) => option.trim())
-      .filter(Boolean);
+function surveyDraft(
+  label = "",
+  type: SurveyFieldDraft["type"] = "TEXT",
+  optionsText = "",
+  required = true
+): SurveyFieldDraft {
+  return { key: `draft-${surveyDraftSequence++}`, label, type, optionsText, required };
+}
 
-    return {
-      label,
-      type: options?.length ? ("SELECT" as const) : ("TEXT" as const),
-      options,
-      required: true,
-      order: index
-    };
-  });
+function surveyDraftsFromCohort(cohort: Cohort): SurveyFieldDraft[] {
+  return cohort.surveyFields.map((field) => ({
+    key: field.id,
+    label: field.label,
+    type: field.type,
+    optionsText: getStringOptions(field.options).join(", "),
+    required: field.required
+  }));
+}
+
+function serializeSurveyFields(fields: SurveyFieldDraft[]) {
+  return fields
+    .filter((field) => field.label.trim())
+    .map((field, order) => {
+      const options = field.type === "SELECT"
+        ? field.optionsText.split(",").map((option) => option.trim()).filter(Boolean)
+        : undefined;
+      if (field.type === "SELECT" && options?.length === 0) {
+        throw new Error(`Добавьте варианты ответа для поля «${field.label.trim()}»`);
+      }
+      return {
+        label: field.label.trim(),
+        type: field.type,
+        options,
+        required: field.required,
+        order
+      };
+    });
 }
 
 function buildInitialAnswersByCohort(cohorts: Cohort[], applications: Application[]): AnswersByCohort {

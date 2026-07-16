@@ -9,6 +9,10 @@ COPY apps/frontend/package.json ./apps/frontend/package.json
 RUN pnpm install --frozen-lockfile --filter @practice/frontend...
 
 FROM deps AS build
+ARG NEXT_PUBLIC_API_URL=/api
+ARG BACKEND_INTERNAL_URL=http://backend:4000
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 COPY apps/frontend ./apps/frontend
 RUN mkdir -p apps/frontend/public
 RUN pnpm --filter @practice/frontend build

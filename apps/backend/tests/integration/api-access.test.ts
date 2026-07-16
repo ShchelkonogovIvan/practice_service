@@ -100,11 +100,24 @@ test("API enforces cohort access, file validation and report review workflow", a
   assert.equal(review.data.reportReviewStatus, "CHANGES_REQUESTED");
   assert.equal(review.data.reportReviewComment, "Добавьте заключение");
 
+  const approval = await request(baseUrl, `/admin/cohorts/${cohort.id}/documents/${owner.id}/report-review`, tokens.admin, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "APPROVED" })
+  });
+  assert.equal(approval.status, 200);
+
+  const revoked = await request(baseUrl, `/admin/cohorts/${cohort.id}/documents/${owner.id}/report-review`, tokens.admin, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "PENDING" })
+  });
+  assert.equal(revoked.status, 200);
+  assert.equal((await revoked.json() as { data: { reportReviewStatus: string } }).data.reportReviewStatus, "PENDING");
+
   const rejectionWithoutComment = await request(baseUrl, `/admin/applications/${ownerApplication.id}/status`, tokens.admin, {
     method: "PATCH",
     body: JSON.stringify({ status: "REJECTED" })
   });
-  assert.equal(rejectionWithoutComment.status, 400);
+  assert.equal(rejectionWithoutComment.status, 200);
 });
 
 async function request(baseUrl: string, route: string, token?: string, init: RequestInit = {}) {

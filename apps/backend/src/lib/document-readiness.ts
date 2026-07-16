@@ -6,8 +6,7 @@ export const writableStudentFields = [
   "programName",
   "specialty",
   "practiceTopic",
-  "mainStageTasks",
-  "supervisorUrfuName"
+  "mainStageTasks"
 ] as const;
 
 export const writableReviewFields = [
@@ -27,8 +26,7 @@ const individualFields = [
   "directionName",
   "programName",
   "practiceTopic",
-  "mainStageTasks",
-  "supervisorUrfuName"
+  "mainStageTasks"
 ] as const;
 
 const titleFields = ["studentFio", "group", "specialty", "practiceTopic"] as const;
@@ -75,8 +73,7 @@ const fieldLabels: Record<string, string> = {
   programName: "образовательная программа",
   specialty: "специальность",
   practiceTopic: "тема практики",
-  mainStageTasks: "работы основного этапа",
-  supervisorUrfuName: "руководитель практики от УрФУ"
+  mainStageTasks: "работы основного этапа"
 };
 
 function missingFieldsReason(data: Record<string, unknown> | null, fields: readonly string[]) {

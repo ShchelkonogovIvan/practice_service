@@ -39,6 +39,27 @@ publicCohortsRouter.get(
   })
 );
 
+publicCohortsRouter.get(
+  "/:cohortId",
+  asyncHandler(async (req, res) => {
+    const now = new Date();
+    const cohort = await prisma.cohort.findFirst({
+      where: {
+        id: req.params.cohortId,
+        applicationStart: { lte: now },
+        applicationEnd: { gte: now }
+      },
+      include: publicCohortInclude
+    });
+
+    if (!cohort) {
+      throw notFound("Cohort is not accepting applications");
+    }
+
+    res.json({ cohort: { ...cohort, testTask: null } });
+  })
+);
+
 cohortsRouter.use(requireAuth, requireAdmin);
 
 cohortsRouter.get(
@@ -269,12 +290,21 @@ function parseSurveyFields(value: unknown) {
       throw badRequest(`Unsupported survey field type: ${type}`);
     }
 
+    const options = type === SurveyFieldType.SELECT
+      ? Array.isArray(field.options)
+        ? field.options.filter((option): option is string => typeof option === "string" && option.trim().length > 0)
+        : []
+      : undefined;
+    if (type === SurveyFieldType.SELECT && options?.length === 0) {
+      throw badRequest(`Select field "${label}" must contain options`);
+    }
+
     return {
       label,
       type: type as SurveyFieldType,
       order: typeof field.order === "number" ? field.order : index,
       required: typeof field.required === "boolean" ? field.required : true,
-      options: field.options ?? undefined
+      options
     };
   });
 }

@@ -14,12 +14,17 @@ function required(name: string, fallback?: string) {
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const localMail = nodeEnv !== "production";
+const jwtSecret = required("JWT_SECRET");
+
+if (nodeEnv === "production" && (jwtSecret.length < 32 || jwtSecret === "change-me-in-production")) {
+  throw new Error("JWT_SECRET must contain at least 32 characters in production");
+}
 
 export const env = {
   nodeEnv,
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: required("DATABASE_URL"),
-  jwtSecret: required("JWT_SECRET"),
+  jwtSecret,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
   appUrl: process.env.APP_URL ?? process.env.CORS_ORIGIN ?? "http://localhost:3000",

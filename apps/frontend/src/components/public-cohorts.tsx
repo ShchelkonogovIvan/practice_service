@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { activeCohort, Cohort, getToken, savePendingApplication, submitApplication } from "@/lib/api";
+import { activeCohort, Cohort, getToken, publicCohort, savePendingApplication, submitApplication } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 type Answers = Record<string, string>;
 type AnswersByCohort = Record<string, Answers>;
 
-export function PublicCohorts() {
+export function PublicCohorts({ cohortId }: { cohortId?: string }) {
   const router = useRouter();
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [answersByCohort, setAnswersByCohort] = useState<AnswersByCohort>({});
@@ -20,11 +21,15 @@ export function PublicCohorts() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    activeCohort()
-      .then((result) => setCohorts(result.cohorts ?? (result.cohort ? [result.cohort] : [])))
+    const request = cohortId
+      ? publicCohort(cohortId).then((result) => [result.cohort])
+      : activeCohort().then((result) => result.cohorts ?? (result.cohort ? [result.cohort] : []));
+
+    request
+      .then(setCohorts)
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Не удалось загрузить когорты"))
       .finally(() => setLoading(false));
-  }, []);
+  }, [cohortId]);
 
   function setAnswer(cohortId: string, fieldId: string, value: string) {
     setAnswersByCohort((current) => ({
@@ -104,6 +109,11 @@ export function PublicCohorts() {
               >
                 {isExpanded ? "Свернуть анкету" : "Заполнить анкету"}
               </Button>
+              {!cohortId ? (
+                <Button asChild type="button" variant="secondary">
+                  <Link href={`/apply/${cohort.id}`}>Открыть по ссылке</Link>
+                </Button>
+              ) : null}
             </div>
 
             {isExpanded ? (

@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 const TOKEN_KEY = "practice_token";
 const PENDING_APPLICATION_KEY = "practice_pending_application";
 
@@ -196,6 +196,10 @@ export async function activeCohort() {
   return api<{ cohort: null | Cohort; cohorts: Cohort[] }>("/public/cohorts/active");
 }
 
+export async function publicCohort(cohortId: string) {
+  return api<{ cohort: Cohort }>(`/public/cohorts/${cohortId}`);
+}
+
 export async function listCohorts() {
   return api<{ cohorts: Cohort[] }>("/cohorts");
 }
@@ -330,7 +334,6 @@ export async function saveMyDocumentData(
     | "specialty"
     | "practiceTopic"
     | "mainStageTasks"
-    | "supervisorUrfuName"
   >>
 ) {
   return api<{ data: StudentDocumentData; readiness: DocumentReadiness }>(
