@@ -36,4 +36,4 @@ COPY --from=build /app/apps/frontend/package.json ./apps/frontend/package.json
 COPY --from=build /app/apps/frontend/.next ./apps/frontend/.next
 COPY --from=build /app/apps/frontend/public ./apps/frontend/public
 EXPOSE 3000 4000
-CMD ["sh", "-c", "cd /app/apps/backend && node node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma && node dist/server.js & cd /app/apps/frontend && exec node node_modules/next/dist/bin/next start -p ${FRONTEND_PORT}"]
+CMD ["sh", "-c", "cd /app/apps/backend && node node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma && if [ -n \"$ADMIN_EMAIL\" ] && [ -n \"$ADMIN_PASSWORD\" ]; then node dist/scripts/create-admin.js; fi && node dist/server.js & cd /app/apps/frontend && exec node node_modules/next/dist/bin/next start -p ${FRONTEND_PORT}"]
