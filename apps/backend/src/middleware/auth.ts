@@ -36,7 +36,7 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   }
 
   if (req.user.role !== UserRole.ADMIN) {
-    return next(forbidden("Admin access required"));
+    return next(forbidden("Доступ разрешён только администратору"));
   }
 
   return next();

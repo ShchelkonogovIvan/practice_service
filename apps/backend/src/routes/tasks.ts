@@ -26,7 +26,7 @@ tasksRouter.get(
       }
     });
     if (!cohort) {
-      throw notFound("Cohort not found");
+      throw notFound("Когорта не найдена");
     }
 
     if (req.user!.role !== UserRole.ADMIN) {
@@ -96,7 +96,7 @@ tasksRouter.post(
   "/cohorts/:cohortId/tasks",
   asyncHandler(async (req, res) => {
     if (req.user!.role !== UserRole.STUDENT) {
-      throw forbidden("Only students can create task cards");
+      throw forbidden("Создавать задачи могут только студенты");
     }
 
     const application = await requireApprovedApplication(req.user!.id, req.params.cohortId);
@@ -127,7 +127,7 @@ tasksRouter.patch(
     const body = asObject(req.body);
     const card = await prisma.taskCard.findUnique({ where: { id: req.params.taskId } });
     if (!card) {
-      throw notFound("Task card not found");
+      throw notFound("Задача не найдена");
     }
     assertCanEditTaskCard(req.user!.role, req.user!.id, card.userId);
     if (req.user!.role !== UserRole.ADMIN) {
@@ -157,7 +157,7 @@ function taskTextField(body: Record<string, unknown>, name: string, nullable: bo
     return null;
   }
   if (typeof value !== "string") {
-    throw badRequest(`Field "${name}" must be a string`);
+    throw badRequest(`Поле «${name}» должно содержать текст`);
   }
 
   const trimmed = value.trim();

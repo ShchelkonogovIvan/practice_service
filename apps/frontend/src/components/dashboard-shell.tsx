@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, ListChecks, LogOut, Plus, Settings, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, ListChecks, LogOut, Plus, Settings, Trash2, UserRound } from "lucide-react";
 import {
   AdminApplication,
+  ApiError,
   Application,
   AuthUser,
   Cohort,
@@ -24,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { OverviewLink } from "@/components/overview-link";
 import { StudentDocuments } from "@/components/student-documents";
 import { AdminDocumentsPanel } from "@/components/admin-documents";
 import { TaskBoard } from "@/components/task-board";
@@ -52,7 +54,7 @@ let surveyDraftSequence = 0;
 
 type Answers = Record<string, string>;
 type AnswersByCohort = Record<string, Answers>;
-type StudentTab = "applications" | "documents" | "tasks";
+type StudentTab = "profile" | "applications" | "documents" | "tasks";
 type AdminTab = "applications" | "documents" | "tasks" | "settings";
 
 const initialForm: CohortForm = {
@@ -80,13 +82,14 @@ export function DashboardShell() {
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [answersByCohort, setAnswersByCohort] = useState<AnswersByCohort>({});
   const [form, setForm] = useState<CohortForm>(initialForm);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
   const [expandedCohortId, setExpandedCohortId] = useState<string | null>(null);
-  const [studentTab, setStudentTab] = useState<StudentTab>("applications");
+  const [studentTab, setStudentTab] = useState<StudentTab>("profile");
   const [studentCohortId, setStudentCohortId] = useState("");
 
   const isAdmin = user?.role === "ADMIN";
@@ -96,7 +99,6 @@ export function DashboardShell() {
   const editableCohorts = isAdmin
     ? []
     : activeCohorts.filter((item) => applicationForCohort(applications, item.id)?.status !== "APPROVED");
-
   useEffect(() => {
     loadDashboard();
   }, []);
@@ -109,7 +111,7 @@ export function DashboardShell() {
 
   async function loadDashboard() {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
 
     try {
       const [userResult, applicationResult, cohortResult] = await Promise.all([
@@ -128,9 +130,12 @@ export function DashboardShell() {
         setCohorts(cohortList.cohorts);
       }
     } catch (caught) {
-      clearToken();
-      router.push("/auth");
-      setError(caught instanceof Error ? caught.message : "Нужно войти заново");
+      if (caught instanceof ApiError && caught.status === 401) {
+        clearToken();
+        router.push("/auth");
+      } else {
+        setLoadError(caught instanceof Error ? caught.message : "Не удалось загрузить личный кабинет");
+      }
     } finally {
       setLoading(false);
     }
@@ -182,6 +187,7 @@ export function DashboardShell() {
 
     if (missingField) {
       setError(`Заполните поле "${missingField.label}"`);
+      setMessage(null);
       return;
     }
 
@@ -201,11 +207,13 @@ export function DashboardShell() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-5xl px-5 py-6">
+    <main className="mx-auto min-h-screen w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
       <header className="mb-6 flex items-center justify-between gap-4">
-        <div>
-          <p className="text-sm text-muted">Личный кабинет</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Практика</h1>
+        <div className="flex min-w-0 items-center gap-4">
+          <OverviewLink />
+          <div className="hidden border-l border-border pl-4 text-sm text-muted sm:block">
+            <p className="text-sm text-muted">Личный кабинет</p>
+          </div>
         </div>
         <Button variant="secondary" onClick={logout}>
           <LogOut className="mr-2 h-4 w-4" />
@@ -213,15 +221,9 @@ export function DashboardShell() {
         </Button>
       </header>
 
-      {error ? (
+      {loadError ? (
         <Card className="mb-4 border-red-200 bg-red-50 p-4">
-          <p className="text-sm font-medium text-red-700">{error}</p>
-        </Card>
-      ) : null}
-
-      {message ? (
-        <Card className="mb-4 border-green-200 bg-green-50 p-4">
-          <p className="text-sm font-medium text-green-700">{message}</p>
+          <p className="text-sm font-medium text-red-700">{loadError}</p>
         </Card>
       ) : null}
 
@@ -229,75 +231,90 @@ export function DashboardShell() {
 
       {!loading && (
         <div className="grid gap-4">
-          <ProfileCard user={user} />
-          {!isAdmin ? (
-            <ActiveCohortCard
-              applications={approvedApplications}
-              selectedCohortId={approvedApplication?.cohort.id ?? ""}
-              onChange={setStudentCohortId}
-            />
-          ) : null}
           {isAdmin ? (
-            <AdminCohorts
-              cohorts={cohorts}
-              form={form}
-              saving={saving}
-              setForm={setForm}
-              onCreateCohort={onCreateCohort}
-              onCohortChange={loadDashboard}
-            />
-          ) : (
             <>
-              <DashboardTabs
-                active={studentTab}
-                items={[
-                  { id: "applications", label: "Заявки", icon: ClipboardList },
-                  { id: "documents", label: "Документы", icon: FileText },
-                  { id: "tasks", label: "Задачи", icon: ListChecks }
-                ]}
-                onChange={(tab) => setStudentTab(tab as StudentTab)}
+              <ProfileCard user={user} />
+              <AdminCohorts
+                cohorts={cohorts}
+                form={form}
+                saving={saving}
+                actionError={error}
+                actionMessage={message}
+                setForm={setForm}
+                onCreateCohort={onCreateCohort}
+                onCohortChange={loadDashboard}
               />
-
-              {studentTab === "applications" ? (
-                <div className="grid gap-4">
-                  <ApplicationFormCard
-                    cohorts={editableCohorts}
-                    applications={applications}
-                    answersByCohort={answersByCohort}
-                    applying={applying}
-                    expandedCohortId={expandedCohortId}
-                    onToggleCohort={(cohortId) =>
-                      setExpandedCohortId((current) => (current === cohortId ? null : cohortId))
-                    }
-                    onAnswerChange={(cohortId, fieldId, value) =>
-                      setAnswersByCohort((current) => ({
-                        ...current,
-                        [cohortId]: {
-                          ...(current[cohortId] ?? {}),
-                          [fieldId]: value
-                        }
-                      }))
-                    }
-                    onSubmit={onApplyToCohort}
-                  />
-                  <StudentApplications applications={applications} />
-                </div>
-              ) : null}
-
-              {studentTab === "documents" && approvedApplication ? (
-                <StudentDocuments application={approvedApplication} />
-              ) : null}
-              {studentTab === "documents" && !approvedApplication ? (
-                <UnavailableSection text="Документы станут доступны после одобрения заявки." />
-              ) : null}
-
-              {studentTab === "tasks" && approvedApplication && user ? (
-                <TaskBoard cohortId={approvedApplication.cohort.id} currentUserId={user.id} />
-              ) : null}
-              {studentTab === "tasks" && !approvedApplication ? (
-                <UnavailableSection text="Задачи станут доступны после одобрения заявки." />
-              ) : null}
             </>
+          ) : (
+            <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <StudentNavigation
+                active={studentTab}
+                user={user}
+                onChange={(tab) => {
+                  setError(null);
+                  setMessage(null);
+                  setStudentTab(tab);
+                }}
+              />
+              <section className="min-w-0">
+                <StudentSectionHeader active={studentTab} />
+
+                {studentTab === "profile" ? (
+                  <div className="grid gap-4">
+                    <ProfileCard user={user} />
+                    <ActiveCohortCard
+                      applications={approvedApplications}
+                      selectedCohortId={approvedApplication?.cohort.id ?? ""}
+                      onChange={setStudentCohortId}
+                    />
+                  </div>
+                ) : null}
+
+                {studentTab === "applications" ? (
+                  <div className="grid gap-4">
+                    <ApplicationFormCard
+                      cohorts={editableCohorts}
+                      applications={applications}
+                      answersByCohort={answersByCohort}
+                      applying={applying}
+                      actionError={error}
+                      actionMessage={message}
+                      expandedCohortId={expandedCohortId}
+                      onToggleCohort={(cohortId) => {
+                        setError(null);
+                        setMessage(null);
+                        setExpandedCohortId((current) => (current === cohortId ? null : cohortId));
+                      }}
+                      onAnswerChange={(cohortId, fieldId, value) =>
+                        setAnswersByCohort((current) => ({
+                          ...current,
+                          [cohortId]: {
+                            ...(current[cohortId] ?? {}),
+                            [fieldId]: value
+                          }
+                        }))
+                      }
+                      onSubmit={onApplyToCohort}
+                    />
+                    <StudentApplications applications={applications} />
+                  </div>
+                ) : null}
+
+                {studentTab === "documents" && approvedApplication ? (
+                  <StudentDocuments application={approvedApplication} />
+                ) : null}
+                {studentTab === "documents" && !approvedApplication ? (
+                  <UnavailableSection text="Документы станут доступны после одобрения заявки." />
+                ) : null}
+
+                {studentTab === "tasks" && approvedApplication && user ? (
+                  <TaskBoard cohortId={approvedApplication.cohort.id} currentUserId={user.id} />
+                ) : null}
+                {studentTab === "tasks" && !approvedApplication ? (
+                  <UnavailableSection text="Задачи станут доступны после одобрения заявки." />
+                ) : null}
+              </section>
+            </div>
           )}
         </div>
       )}
@@ -305,13 +322,94 @@ export function DashboardShell() {
   );
 }
 
+function StudentNavigation({
+  active,
+  user,
+  onChange
+}: {
+  active: StudentTab;
+  user: AuthUser | null;
+  onChange: (tab: StudentTab) => void;
+}) {
+  const items: Array<{
+    id: StudentTab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }> = [
+    { id: "profile", label: "Профиль", icon: UserRound },
+    { id: "applications", label: "Заявки", icon: ClipboardList },
+    { id: "documents", label: "Документы", icon: FileText },
+    { id: "tasks", label: "Задачи", icon: ListChecks }
+  ];
+
+  return (
+    <aside className="overflow-hidden rounded-md border border-border bg-white lg:sticky lg:top-6">
+      <div className="hidden border-b border-border px-4 py-4 lg:block">
+        <p className="text-sm font-semibold">Разделы кабинета</p>
+        <p className="mt-1 truncate text-xs text-muted">{user?.email}</p>
+      </div>
+      <nav className="grid grid-cols-4 p-1.5 lg:flex lg:flex-col" aria-label="Разделы кабинета">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const selected = active === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              aria-current={selected ? "page" : undefined}
+              className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-10 lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:text-sm ${
+                selected
+                  ? "bg-primarySoft text-primary"
+                  : "text-muted hover:bg-slate-50 hover:text-foreground"
+              }`}
+              onClick={() => onChange(item.id)}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="max-w-full truncate">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+}
+
+function StudentSectionHeader({ active }: { active: StudentTab }) {
+  const sections: Record<StudentTab, { title: string; description: string }> = {
+    profile: { title: "Профиль", description: "Учётная запись и активная практика" },
+    applications: { title: "Заявки", description: "Доступные практики и статусы заявок" },
+    documents: { title: "Документы", description: "Формы и отчёт по выбранной практике" },
+    tasks: { title: "Задачи", description: "Планирование работы и прогресс" }
+  };
+  const section = sections[active];
+
+  return (
+    <div className="mb-4">
+      <h2 className="text-xl font-semibold">{section.title}</h2>
+      <p className="mt-1 text-sm text-muted">{section.description}</p>
+    </div>
+  );
+}
+
 function ProfileCard({ user }: { user: AuthUser | null }) {
   return (
     <Card className="p-5">
-      <h2 className="text-lg font-semibold">Профиль</h2>
-      <p className="mt-2 text-sm text-muted">
-        {user ? `${user.email} · ${user.role}` : "Неизвестный пользователь"}
-      </p>
+      <div className="flex items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primarySoft text-primary">
+          <UserRound className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">Учётная запись</h2>
+          <p className="mt-1 truncate text-sm text-muted">
+            {user?.email ?? "Неизвестный пользователь"}
+          </p>
+        </div>
+        {user ? (
+          <span className="ml-auto rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-muted">
+            {user.role === "ADMIN" ? "Администратор" : "Студент"}
+          </span>
+        ) : null}
+      </div>
     </Card>
   );
 }
@@ -353,6 +451,8 @@ function ApplicationFormCard({
   applications,
   answersByCohort,
   applying,
+  actionError,
+  actionMessage,
   expandedCohortId,
   onToggleCohort,
   onAnswerChange,
@@ -362,6 +462,8 @@ function ApplicationFormCard({
   applications: Application[];
   answersByCohort: AnswersByCohort;
   applying: boolean;
+  actionError: string | null;
+  actionMessage: string | null;
   expandedCohortId: string | null;
   onToggleCohort: (cohortId: string) => void;
   onAnswerChange: (cohortId: string, fieldId: string, value: string) => void;
@@ -418,6 +520,8 @@ function ApplicationFormCard({
                         />
                       ))
                     )}
+
+                    <InlineFeedback error={actionError} message={actionMessage} />
 
                     <Button type="submit" disabled={applying || cohort.surveyFields.length === 0}>
                       {applying ? "Сохраняем..." : application ? "Обновить заявку" : "Отправить заявку"}
@@ -534,6 +638,8 @@ function AdminCohorts({
   cohorts,
   form,
   saving,
+  actionError,
+  actionMessage,
   setForm,
   onCreateCohort,
   onCohortChange
@@ -541,6 +647,8 @@ function AdminCohorts({
   cohorts: Cohort[];
   form: CohortForm;
   saving: boolean;
+  actionError: string | null;
+  actionMessage: string | null;
   setForm: React.Dispatch<React.SetStateAction<CohortForm>>;
   onCreateCohort: (event: React.FormEvent) => void;
   onCohortChange: () => Promise<void>;
@@ -669,6 +777,8 @@ function AdminCohorts({
             <p className="text-muted">Роли: {rolesPreview.length ? rolesPreview.join(", ") : "не заданы"}</p>
           </div>
 
+          <InlineFeedback error={actionError} message={actionMessage} />
+
           <Button type="submit" disabled={saving}>
             {saving ? "Создаем..." : "Создать когорту"}
           </Button>
@@ -770,22 +880,25 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
         </div>
       </Card>
 
-      <DashboardTabs
-        active={activeTab}
-        items={[
-          { id: "applications", label: "Заявки", icon: ClipboardList },
-          { id: "documents", label: "Документы", icon: FileText },
-          { id: "tasks", label: "Задачи", icon: ListChecks },
-          { id: "settings", label: "Настройки", icon: Settings }
-        ]}
-        onChange={(tab) => setActiveTab(tab as AdminTab)}
-      />
+      <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <DashboardTabs
+          active={activeTab}
+          variant="sidebar"
+          items={[
+            { id: "applications", label: "Заявки", icon: ClipboardList },
+            { id: "documents", label: "Документы", icon: FileText },
+            { id: "tasks", label: "Задачи", icon: ListChecks },
+            { id: "settings", label: "Настройки", icon: Settings }
+          ]}
+          onChange={(tab) => setActiveTab(tab as AdminTab)}
+        />
 
-      {activeTab === "applications" ? <AdminApplicationsPanel cohort={cohort} /> : null}
-      {activeTab === "documents" ? <AdminDocumentsPanel cohort={cohort} /> : null}
-      {activeTab === "tasks" ? <TaskBoard cohortId={cohort.id} currentUserId="" isAdmin /> : null}
+        <div className="min-w-0">
+          {activeTab === "applications" ? <AdminApplicationsPanel cohort={cohort} /> : null}
+          {activeTab === "documents" ? <AdminDocumentsPanel cohort={cohort} /> : null}
+          {activeTab === "tasks" ? <TaskBoard cohortId={cohort.id} currentUserId="" isAdmin /> : null}
 
-      {activeTab === "settings" ? (
+          {activeTab === "settings" ? (
         <Card className="p-5">
           <div>
             <h3 className="text-base font-semibold">Анкета и роли</h3>
@@ -857,7 +970,9 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
             </div>
           </div>
         </Card>
-      ) : null}
+          ) : null}
+        </div>
+      </div>
     </section>
   );
 }
@@ -865,15 +980,30 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
 function DashboardTabs({
   active,
   items,
+  variant = "horizontal",
   onChange
 }: {
   active: string;
   items: Array<{ id: string; label: string; icon: React.ComponentType<{ className?: string }> }>;
+  variant?: "horizontal" | "sidebar";
   onChange: (id: string) => void;
 }) {
+  const sidebar = variant === "sidebar";
+
   return (
-    <div className="overflow-x-auto border-b border-border" role="tablist" aria-label="Разделы кабинета">
-      <div className="flex min-w-max gap-1">
+    <div
+      className={sidebar
+        ? "overflow-hidden rounded-md border border-border bg-white lg:sticky lg:top-6"
+        : "overflow-x-auto border-b border-border"}
+      role="tablist"
+      aria-label="Разделы кабинета"
+    >
+      {sidebar ? (
+        <div className="hidden border-b border-border px-4 py-4 lg:block">
+          <p className="text-sm font-semibold">Разделы когорты</p>
+        </div>
+      ) : null}
+      <div className={sidebar ? "grid grid-cols-4 p-1.5 lg:flex lg:flex-col" : "flex min-w-max gap-1"}>
         {items.map((item) => {
           const Icon = item.icon;
           const selected = active === item.id;
@@ -883,15 +1013,21 @@ function DashboardTabs({
               type="button"
               role="tab"
               aria-selected={selected}
-              className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                selected
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted hover:border-slate-300 hover:text-foreground"
-              }`}
+              className={sidebar
+                ? `flex min-w-0 flex-col items-center justify-center gap-1 rounded-md px-2 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:h-10 lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:text-sm ${
+                    selected
+                      ? "bg-primarySoft text-primary"
+                      : "text-muted hover:bg-slate-50 hover:text-foreground"
+                  }`
+                : `flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    selected
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted hover:border-slate-300 hover:text-foreground"
+                  }`}
               onClick={() => onChange(item.id)}
             >
               <Icon className="h-4 w-4" />
-              {item.label}
+              <span className="max-w-full truncate">{item.label}</span>
             </button>
           );
         })}
@@ -902,6 +1038,26 @@ function DashboardTabs({
 
 function UnavailableSection({ text }: { text: string }) {
   return <Card className="p-5 text-sm text-muted">{text}</Card>;
+}
+
+function InlineFeedback({ error, message }: { error: string | null; message: string | null }) {
+  if (error) {
+    return (
+      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">
+        {error}
+      </div>
+    );
+  }
+
+  if (message) {
+    return (
+      <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700" role="status">
+        {message}
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {

@@ -13,20 +13,20 @@ export function validateApplicationAnswers(answers: Record<string, unknown>, sur
     const value = answers[field.id];
 
     if (field.required && isEmptyAnswer(value)) {
-      throw badRequest(`Field "${field.label}" is required`);
+      throw badRequest(`Заполните обязательное поле «${field.label}»`);
     }
 
     if (isEmptyAnswer(value)) continue;
 
     if (typeof value !== "string") {
-      throw badRequest(`Field "${field.label}" must be a string`);
+      throw badRequest(`Поле «${field.label}» должно содержать текст`);
     }
 
     if (field.type === "SELECT") {
       const options = Array.isArray(field.options) ? field.options : [];
       const stringOptions = options.filter((option): option is string => typeof option === "string");
       if (stringOptions.length > 0 && !stringOptions.includes(value)) {
-        throw badRequest(`Unsupported option for field "${field.label}"`);
+        throw badRequest(`Выбрано недопустимое значение поля «${field.label}»`);
       }
     }
   }
@@ -38,7 +38,7 @@ export function assertApplicationDecision(
   _reviewComment?: string
 ) {
   if (status === "APPROVED" && !roleId) {
-    throw badRequest("Role is required to approve application");
+    throw badRequest("Для одобрения заявки необходимо выбрать роль");
   }
 }
 

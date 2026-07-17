@@ -21,7 +21,7 @@ export async function requireApprovedApplication(userId: string, cohortId: strin
   });
 
   if (!application || application.status !== ApplicationStatus.APPROVED) {
-    throw forbidden("Approved application for this cohort is required");
+    throw forbidden("Для доступа нужна одобренная заявка в эту когорту");
   }
 
   return application;

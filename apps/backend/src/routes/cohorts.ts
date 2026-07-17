@@ -53,7 +53,7 @@ publicCohortsRouter.get(
     });
 
     if (!cohort) {
-      throw notFound("Cohort is not accepting applications");
+      throw notFound("Когорта не принимает заявки");
     }
 
     res.json({ cohort: { ...cohort, testTask: null } });
@@ -130,7 +130,7 @@ cohortsRouter.get(
     });
 
     if (!cohort) {
-      throw notFound("Cohort not found");
+      throw notFound("Когорта не найдена");
     }
 
     res.json({ cohort });
@@ -148,7 +148,7 @@ cohortsRouter.put(
     });
 
     if (!cohort) {
-      throw notFound("Cohort not found");
+      throw notFound("Когорта не найдена");
     }
 
     const updated = await prisma.cohort.update({
@@ -177,7 +177,7 @@ cohortsRouter.put(
     });
 
     if (!cohort) {
-      throw notFound("Cohort not found");
+      throw notFound("Когорта не найдена");
     }
 
     const existingRoles = await prisma.cohortRole.findMany({
@@ -208,7 +208,7 @@ cohortsRouter.put(
       cohort: updated,
       warning:
         removedAssignedRoles.length > 0
-          ? `Removed assigned roles: ${removedAssignedRoles.join(", ")}`
+          ? `Удалены назначенные роли: ${removedAssignedRoles.join(", ")}`
           : null
     });
   })
@@ -227,7 +227,7 @@ cohortsRouter.put(
     });
 
     if (!cohort) {
-      throw notFound("Cohort not found");
+      throw notFound("Когорта не найдена");
     }
 
     const testTask = await prisma.testTask.upsert({
@@ -264,7 +264,7 @@ function parseRoles(value: unknown) {
     return [];
   }
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
-    throw badRequest("Field \"roles\" must be an array of strings");
+    throw badRequest("Роли должны быть переданы в виде списка");
   }
   return Array.from(new Set(value.map((item) => item.trim()).filter(Boolean)));
 }
@@ -274,12 +274,12 @@ function parseSurveyFields(value: unknown) {
     return [];
   }
   if (!Array.isArray(value)) {
-    throw badRequest("Field \"surveyFields\" must be an array");
+    throw badRequest("Поля анкеты должны быть переданы в виде списка");
   }
 
   return value.map((item, index) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
-      throw badRequest("Each survey field must be an object");
+      throw badRequest("Каждое поле анкеты должно иметь корректный формат");
     }
 
     const field = item as Record<string, unknown>;
@@ -287,7 +287,7 @@ function parseSurveyFields(value: unknown) {
     const type = stringField(field, "type").toUpperCase();
 
     if (!Object.values(SurveyFieldType).includes(type as SurveyFieldType)) {
-      throw badRequest(`Unsupported survey field type: ${type}`);
+      throw badRequest(`Недопустимый тип поля анкеты: ${type}`);
     }
 
     const options = type === SurveyFieldType.SELECT
@@ -296,7 +296,7 @@ function parseSurveyFields(value: unknown) {
         : []
       : undefined;
     if (type === SurveyFieldType.SELECT && options?.length === 0) {
-      throw badRequest(`Select field "${label}" must contain options`);
+      throw badRequest(`Добавьте варианты ответа для поля «${label}»`);
     }
 
     return {
@@ -311,14 +311,14 @@ function parseSurveyFields(value: unknown) {
 
 function validateCohortDates(applicationStart: Date, applicationEnd: Date, practiceStart: Date, practiceEnd: Date) {
   if (applicationStart > applicationEnd) {
-    throw badRequest("Application end date must be later than application start date");
+    throw badRequest("Дата окончания приёма заявок должна быть позже даты начала");
   }
 
   if (practiceStart > practiceEnd) {
-    throw badRequest("Practice end date must be later than practice start date");
+    throw badRequest("Дата окончания практики должна быть позже даты начала");
   }
 
   if (applicationEnd > practiceStart) {
-    throw badRequest("Application period must finish before practice starts");
+    throw badRequest("Приём заявок должен завершиться до начала практики");
   }
 }

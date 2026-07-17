@@ -46,7 +46,7 @@ applicationsRouter.post(
   "/cohorts/:cohortId/applications",
   asyncHandler(async (req, res) => {
     if (req.user!.role !== UserRole.STUDENT) {
-      throw forbidden("Only students can submit applications");
+      throw forbidden("Подавать заявки могут только студенты");
     }
 
     const body = asObject(req.body);
@@ -61,12 +61,12 @@ applicationsRouter.post(
     });
 
     if (!cohort) {
-      throw notFound("Cohort not found");
+      throw notFound("Когорта не найдена");
     }
 
     const now = new Date();
     if (now < cohort.applicationStart || now > cohort.applicationEnd) {
-      throw badRequest("Applications are closed for this cohort");
+      throw badRequest("Приём заявок в эту когорту закрыт");
     }
 
     validateApplicationAnswers(answers, cohort.surveyFields);
@@ -129,7 +129,7 @@ adminApplicationsRouter.patch(
     const reviewComment = optionalStringField(body, "reviewComment");
 
     if (!Object.values(ApplicationStatus).includes(status as ApplicationStatus)) {
-      throw badRequest(`Unsupported application status: ${status}`);
+      throw badRequest(`Недопустимый статус заявки: ${status}`);
     }
 
     const application = await prisma.application.findUnique({
@@ -137,7 +137,7 @@ adminApplicationsRouter.patch(
     });
 
     if (!application) {
-      throw notFound("Application not found");
+      throw notFound("Заявка не найдена");
     }
 
     assertApplicationDecision(status as ApplicationStatus, roleId, reviewComment);
@@ -147,7 +147,7 @@ adminApplicationsRouter.patch(
         where: { id: roleId, cohortId: application.cohortId }
       });
       if (!role) {
-        throw badRequest("Role does not belong to the application cohort");
+        throw badRequest("Выбранная роль не относится к когорте заявки");
       }
     }
 

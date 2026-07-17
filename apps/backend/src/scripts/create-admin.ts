@@ -7,10 +7,10 @@ async function main() {
   const password = process.env.ADMIN_PASSWORD;
 
   if (!email || !email.includes("@")) {
-    throw new Error("Set a valid ADMIN_EMAIL");
+    throw new Error("Укажите корректный ADMIN_EMAIL");
   }
   if (!password || password.length < 12) {
-    throw new Error("ADMIN_PASSWORD must contain at least 12 characters");
+    throw new Error("ADMIN_PASSWORD должен содержать не менее 12 символов");
   }
 
   const passwordHash = await hashPassword(password);
@@ -20,7 +20,7 @@ async function main() {
     create: { email, passwordHash, role: UserRole.ADMIN }
   });
 
-  console.log(`Administrator is ready: ${email}`);
+  console.log(`Учётная запись администратора готова: ${email}`);
 }
 
 main()

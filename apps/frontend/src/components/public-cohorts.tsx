@@ -18,6 +18,7 @@ export function PublicCohorts({ cohortId }: { cohortId?: string }) {
   const [expandedCohortId, setExpandedCohortId] = useState<string | null>(null);
   const [submittingCohortId, setSubmittingCohortId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export function PublicCohorts({ cohortId }: { cohortId?: string }) {
 
     request
       .then(setCohorts)
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Не удалось загрузить когорты"))
+      .catch((caught) => setLoadError(caught instanceof Error ? caught.message : "Не удалось загрузить когорты"))
       .finally(() => setLoading(false));
   }, [cohortId]);
 
@@ -78,11 +79,11 @@ export function PublicCohorts({ cohortId }: { cohortId?: string }) {
 
       {loading ? <Card className="p-5 text-sm text-muted">Загрузка...</Card> : null}
 
-      {error ? (
-        <Card className="border-red-200 bg-red-50 p-5 text-sm font-medium text-red-700">{error}</Card>
+      {loadError ? (
+        <Card className="border-red-200 bg-red-50 p-5 text-sm font-medium text-red-700">{loadError}</Card>
       ) : null}
 
-      {!loading && !error && cohorts.length === 0 ? (
+      {!loading && !loadError && cohorts.length === 0 ? (
         <Card className="p-5 text-sm text-muted">Сейчас нет открытых наборов на практику.</Card>
       ) : null}
 
@@ -105,7 +106,10 @@ export function PublicCohorts({ cohortId }: { cohortId?: string }) {
               </div>
               <Button
                 type="button"
-                onClick={() => setExpandedCohortId((current) => (current === cohort.id ? null : cohort.id))}
+                onClick={() => {
+                  setError(null);
+                  setExpandedCohortId((current) => (current === cohort.id ? null : cohort.id));
+                }}
               >
                 {isExpanded ? "Свернуть анкету" : "Заполнить анкету"}
               </Button>
@@ -130,6 +134,12 @@ export function PublicCohorts({ cohortId }: { cohortId?: string }) {
                     />
                   ))
                 )}
+
+                {error ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">
+                    {error}
+                  </div>
+                ) : null}
 
                 <Button type="submit" disabled={isSubmitting || cohort.surveyFields.length === 0}>
                   {isSubmitting ? "Отправляем..." : "Отправить"}

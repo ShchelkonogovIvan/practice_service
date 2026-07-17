@@ -242,7 +242,7 @@ adminDocumentsRouter.patch(
     const status = stringField(body, "status").toUpperCase();
     const comment = typeof body.comment === "string" ? body.comment.trim() || null : null;
     if (!Object.values(ReportReviewStatus).includes(status as ReportReviewStatus)) {
-      throw badRequest(`Unsupported report review status: ${status}`);
+      throw badRequest(`Недопустимый статус проверки отчёта: ${status}`);
     }
     if (status === ReportReviewStatus.CHANGES_REQUESTED && !comment) {
       throw badRequest("Комментарий обязателен, если отчёт требует исправлений");
@@ -369,7 +369,7 @@ function parseDocumentKind(value: string): PracticeDocumentKind {
   if (value === "individual-assignment" || value === "review" || value === "title-page") {
     return value;
   }
-  throw notFound("Unsupported document type");
+  throw notFound("Недопустимый тип документа");
 }
 
 function assertCanGenerate(kind: PracticeDocumentKind, data: Record<string, unknown> | null) {
@@ -460,7 +460,7 @@ function resolveReportPath(fileUrl: string) {
   const uploadsRoot = path.resolve(env.uploadsDir);
   const filePath = path.resolve(uploadsRoot, fileUrl);
   if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) {
-    throw forbidden("Invalid report path");
+    throw forbidden("Некорректный путь к файлу отчёта");
   }
   return filePath;
 }

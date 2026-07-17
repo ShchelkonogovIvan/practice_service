@@ -32,6 +32,6 @@ export async function sendEmail(message: EmailMessage) {
     return { sent: true } as const;
   } catch (error) {
     console.error(`Failed to send email to ${message.to}`, error);
-    return { sent: false, reason: "Delivery failed" } as const;
+    return { sent: false, reason: "Не удалось отправить письмо" } as const;
   }
 }

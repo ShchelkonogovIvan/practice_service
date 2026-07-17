@@ -4,7 +4,7 @@ import multer from "multer";
 import { HttpError } from "../http/errors.js";
 
 export function notFoundHandler(req: Request, res: Response) {
-  res.status(404).json({ message: `Route ${req.method} ${req.path} not found` });
+  res.status(404).json({ message: `Маршрут ${req.method} ${req.path} не найден` });
 }
 
 export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
@@ -20,10 +20,10 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-    return res.status(409).json({ message: "Record already exists", details: error.meta });
+    return res.status(409).json({ message: "Такая запись уже существует", details: error.meta });
   }
 
   console.error(error);
-  return res.status(500).json({ message: "Internal server error" });
+  return res.status(500).json({ message: "Внутренняя ошибка сервера. Попробуйте ещё раз позже" });
 }
 

@@ -2,6 +2,13 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 const TOKEN_KEY = "practice_token";
 const PENDING_APPLICATION_KEY = "practice_pending_application";
 
+export class ApiError extends Error {
+  constructor(message: string, public status?: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export type AuthUser = {
   id: string;
   email: string;
@@ -154,20 +161,61 @@ export function clearToken() {
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(!isFormData ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
-    }
-  });
+  let response: Response;
 
-  const data = await response.json().catch(() => ({}));
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        ...(!isFormData ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers
+      }
+    });
+  } catch {
+    throw new ApiError("Не удалось связаться с сервером. Проверьте подключение и попробуйте ещё раз");
+  }
+
+  const data = await response.json().catch(() => ({})) as { message?: unknown };
   if (!response.ok) {
-    throw new Error(data.message ?? "Request failed");
+    const message = typeof data.message === "string" ? data.message : "";
+    throw new ApiError(russianApiErrorMessage(message, response.status), response.status);
   }
   return data as T;
+}
+
+function russianApiErrorMessage(message: string, status: number) {
+  if (/[А-Яа-яЁё]/.test(message)) {
+    return message;
+  }
+
+  const exactTranslations: Record<string, string> = {
+    Unauthorized: "Требуется авторизация",
+    Forbidden: "Недостаточно прав для выполнения действия",
+    "Not found": "Запрашиваемый ресурс не найден",
+    "Internal server error": "Внутренняя ошибка сервера. Попробуйте ещё раз позже",
+    "Request failed": "Не удалось выполнить запрос",
+    "Failed to fetch": "Не удалось связаться с сервером"
+  };
+
+  if (exactTranslations[message]) {
+    return exactTranslations[message];
+  }
+
+  const statusMessages: Record<number, string> = {
+    400: "Проверьте введённые данные",
+    401: "Требуется авторизация",
+    403: "Недостаточно прав для выполнения действия",
+    404: "Запрашиваемый ресурс не найден",
+    409: "Такая запись уже существует",
+    413: "Загружаемый файл слишком большой",
+    429: "Слишком много запросов. Попробуйте ещё раз позже",
+    500: "Внутренняя ошибка сервера. Попробуйте ещё раз позже",
+    502: "Сервер временно недоступен",
+    503: "Сервис временно недоступен"
+  };
+
+  return statusMessages[status] ?? "Не удалось выполнить запрос. Попробуйте ещё раз";
 }
 
 export async function login(email: string, password: string) {
@@ -407,13 +455,23 @@ export async function updateTaskCard(taskId: string, values: TaskCardValues) {
 
 export async function downloadApiFile(path: string, fallbackName: string) {
   const token = getToken();
-  const response = await fetch(`${API_URL}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+  } catch {
+    throw new ApiError("Не удалось связаться с сервером. Проверьте подключение и попробуйте ещё раз");
+  }
 
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.message ?? "Не удалось скачать файл");
+    const data = await response.json().catch(() => ({})) as { message?: unknown };
+    const message = typeof data.message === "string" ? data.message : "";
+    throw new ApiError(
+      message ? russianApiErrorMessage(message, response.status) : "Не удалось скачать файл",
+      response.status
+    );
   }
 
   const blob = await response.blob();

@@ -7,7 +7,7 @@ dotenv.config({ path: fileURLToPath(new URL("../../../../.env", import.meta.url)
 function required(name: string, fallback?: string) {
   const value = process.env[name] ?? fallback;
   if (!value) {
-    throw new Error(`Missing required environment variable ${name}`);
+    throw new Error(`Не задана обязательная переменная окружения ${name}`);
   }
   return value;
 }
@@ -17,7 +17,7 @@ const localMail = nodeEnv !== "production";
 const jwtSecret = required("JWT_SECRET");
 
 if (nodeEnv === "production" && (jwtSecret.length < 32 || jwtSecret === "change-me-in-production")) {
-  throw new Error("JWT_SECRET must contain at least 32 characters in production");
+  throw new Error("В production переменная JWT_SECRET должна содержать не менее 32 символов");
 }
 
 export const env = {

@@ -51,6 +51,7 @@ export function StudentDocuments({ application }: { application: Application }) 
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [feedbackArea, setFeedbackArea] = useState<"load" | "form" | "report" | "documents">("load");
   const lastSavedForm = useRef<FormValues>(emptyForm);
 
   useEffect(() => {
@@ -70,7 +71,8 @@ export function StudentDocuments({ application }: { application: Application }) 
         lastSavedForm.current = nextForm;
       }
     } catch (caught) {
-      if (!silent) setError(errorMessage(caught));
+      setFeedbackArea("load");
+      setError(errorMessage(caught));
     }
   }
 
@@ -87,6 +89,7 @@ export function StudentDocuments({ application }: { application: Application }) 
   async function persistForm(showMessage: boolean) {
     const snapshot = { ...form };
     setSaving(true);
+    setFeedbackArea("form");
     setError(null);
     if (showMessage) setMessage(null);
     try {
@@ -105,6 +108,7 @@ export function StudentDocuments({ application }: { application: Application }) 
   async function uploadReport() {
     if (!report) return;
     setUploading(true);
+    setFeedbackArea("report");
     setError(null);
     setMessage(null);
     try {
@@ -120,8 +124,10 @@ export function StudentDocuments({ application }: { application: Application }) 
     }
   }
 
-  async function download(path: string, filename: string) {
+  async function download(path: string, filename: string, area: "report" | "documents" = "documents") {
+    setFeedbackArea(area);
     setError(null);
+    setMessage(null);
     try {
       await downloadApiFile(path, filename);
     } catch (caught) {
@@ -149,8 +155,7 @@ export function StudentDocuments({ application }: { application: Application }) 
         </div>
       ) : null}
 
-      {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
-      {message ? <p className="mt-4 text-sm text-green-700">{message}</p> : null}
+      {feedbackArea === "load" ? <FeedbackNotice error={error} message={message} /> : null}
 
       <form className="mt-5 grid gap-4" onSubmit={save}>
         <div className="grid gap-4 md:grid-cols-2">
@@ -166,6 +171,8 @@ export function StudentDocuments({ application }: { application: Application }) 
           Работы основного этапа
           <textarea className="min-h-28 rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" value={form.mainStageTasks} onChange={(event) => setForm({ ...form, mainStageTasks: event.target.value })} onBlur={autosave} />
         </label>
+        {feedbackArea === "form" ? <FeedbackNotice error={error} message={message} /> : null}
+
         <Button type="submit" disabled={saving} onMouseDown={(event) => event.preventDefault()}>
           <Save className="mr-2 h-4 w-4" />
           {saving ? "Сохраняем..." : "Сохранить данные"}
@@ -179,6 +186,7 @@ export function StudentDocuments({ application }: { application: Application }) 
             {data.reportFileName}{data.reportUploadedAt ? ` · ${formatDate(data.reportUploadedAt)}` : ""}
           </p>
         ) : null}
+        {feedbackArea === "report" ? <FeedbackNotice error={error} message={message} /> : null}
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <Input className="max-w-md" accept=".docx,.pdf" type="file" onChange={(event) => setReport(event.target.files?.[0] ?? null)} />
           <Button type="button" disabled={!report || uploading} onClick={uploadReport}>
@@ -186,7 +194,7 @@ export function StudentDocuments({ application }: { application: Application }) 
             {uploading ? "Загружаем..." : "Загрузить"}
           </Button>
           {readiness.reportUploaded ? (
-            <Button type="button" variant="secondary" onClick={() => download(`/cohorts/${cohortId}/documents/me/report`, data?.reportFileName ?? "practice-report")}>
+            <Button type="button" variant="secondary" onClick={() => download(`/cohorts/${cohortId}/documents/me/report`, data?.reportFileName ?? "practice-report", "report")}>
               <Download className="mr-2 h-4 w-4" />
               Скачать отчёт
             </Button>
@@ -194,10 +202,13 @@ export function StudentDocuments({ application }: { application: Application }) 
         </div>
       </div>
 
-      <div className="mt-6 grid gap-3 border-t border-border pt-5 md:grid-cols-3">
-        <DocumentButton label="Сформировать ИЗ" enabled={readiness.individualReady} reason={readiness.individualReason} onClick={() => download(`/cohorts/${cohortId}/documents/me/generate/individual-assignment`, "individual-assignment.docx")} />
-        <DocumentButton label="Сформировать отзыв" enabled={readiness.reviewReady} reason={readiness.reviewReason} onClick={() => download(`/cohorts/${cohortId}/documents/me/generate/review`, "practice-review.docx")} />
-        <DocumentButton label="Сформировать титульный лист" enabled={readiness.titleReady} reason={readiness.titleReason} onClick={() => download(`/cohorts/${cohortId}/documents/me/generate/title-page`, "report-title-page.docx")} />
+      <div className="mt-6 border-t border-border pt-5">
+        {feedbackArea === "documents" ? <FeedbackNotice error={error} message={message} /> : null}
+        <div className="grid gap-3 md:grid-cols-3">
+          <DocumentButton label="Сформировать ИЗ" enabled={readiness.individualReady} reason={readiness.individualReason} onClick={() => download(`/cohorts/${cohortId}/documents/me/generate/individual-assignment`, "individual-assignment.docx")} />
+          <DocumentButton label="Сформировать отзыв" enabled={readiness.reviewReady} reason={readiness.reviewReason} onClick={() => download(`/cohorts/${cohortId}/documents/me/generate/review`, "practice-review.docx")} />
+          <DocumentButton label="Сформировать титульный лист" enabled={readiness.titleReady} reason={readiness.titleReason} onClick={() => download(`/cohorts/${cohortId}/documents/me/generate/title-page`, "report-title-page.docx")} />
+        </div>
       </div>
     </Card>
   );
@@ -209,6 +220,16 @@ function Field({ label, value, onChange, onBlur }: { label: string; value: strin
 
 function DocumentButton({ label, enabled, reason, onClick }: { label: string; enabled: boolean; reason: string | null; onClick: () => void }) {
   return <div className="grid content-start gap-2"><Button type="button" variant={enabled ? "primary" : "secondary"} disabled={!enabled} onClick={onClick}><Download className="mr-2 h-4 w-4" />{label}</Button>{!enabled && reason ? <p className="text-xs text-muted">{reason}</p> : null}</div>;
+}
+
+function FeedbackNotice({ error, message }: { error: string | null; message: string | null }) {
+  if (error) {
+    return <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" role="alert">{error}</div>;
+  }
+  if (message) {
+    return <div className="mb-3 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700" role="status">{message}</div>;
+  }
+  return null;
 }
 
 function formFromData(data: StudentDocumentData): FormValues {
