@@ -57,7 +57,12 @@ export function StudentDocuments({ application }: { application: Application }) 
   useEffect(() => {
     load(false);
     const interval = window.setInterval(() => load(true), 10000);
-    return () => window.clearInterval(interval);
+    const refreshOnFocus = () => load(true);
+    window.addEventListener("focus", refreshOnFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshOnFocus);
+    };
   }, [application.cohort.id]);
 
   async function load(silent: boolean) {
@@ -70,9 +75,12 @@ export function StudentDocuments({ application }: { application: Application }) 
         setForm(nextForm);
         lastSavedForm.current = nextForm;
       }
+      if (!silent) setError(null);
     } catch (caught) {
-      setFeedbackArea("load");
-      setError(errorMessage(caught));
+      if (!silent) {
+        setFeedbackArea("load");
+        setError(errorMessage(caught));
+      }
     }
   }
 
@@ -155,7 +163,12 @@ export function StudentDocuments({ application }: { application: Application }) 
         </div>
       ) : null}
 
-      {feedbackArea === "load" ? <FeedbackNotice error={error} message={message} /> : null}
+      {feedbackArea === "load" ? (
+        <div>
+          <FeedbackNotice error={error} message={message} />
+          {error ? <Button type="button" variant="secondary" onClick={() => load(false)}>Повторить</Button> : null}
+        </div>
+      ) : null}
 
       <form className="mt-5 grid gap-4" onSubmit={save}>
         <div className="grid gap-4 md:grid-cols-2">

@@ -202,7 +202,12 @@ export function TaskBoard({
         <p className="text-sm font-medium">{days.length ? formatWeek(days) : "Нет рабочих дней"}</p>
       </div>
 
-      {error ? <p className="mt-4 text-sm text-red-700">{error}</p> : null}
+      {error ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-red-700">{error}</p>
+          <Button type="button" variant="secondary" onClick={loadBoard}>Повторить</Button>
+        </div>
+      ) : null}
       {loading ? <p className="mt-4 text-sm text-muted">Загрузка задач...</p> : null}
 
       {!loading && board && board.participants.length === 0 ? (
@@ -242,7 +247,16 @@ export function TaskBoard({
                         {canEdit ? (
                           <button
                             type="button"
-                            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-slate-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            className="absolute inset-0 z-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                            title={`Добавить задачу на ${formatShortDate(day)}`}
+                            aria-label={`Добавить задачу на ${formatShortDate(day)}`}
+                            onClick={() => openNewCard(participant, day)}
+                          />
+                        ) : null}
+                        {canEdit ? (
+                          <button
+                            type="button"
+                            className="absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-md text-muted transition hover:bg-slate-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                             title={`Добавить задачу на ${formatShortDate(day)}`}
                             aria-label={`Добавить задачу на ${formatShortDate(day)}`}
                             onClick={() => openNewCard(participant, day)}
@@ -251,7 +265,7 @@ export function TaskBoard({
                           </button>
                         ) : null}
 
-                        <div className={canEdit ? "grid gap-2 pt-8" : "grid gap-2"}>
+                        <div className={canEdit ? "pointer-events-none relative z-10 grid gap-2 pt-8" : "grid gap-2"}>
                           {cards.map((card) => (
                             <TaskCardItem
                               key={card.id}
@@ -291,7 +305,7 @@ export function TaskBoard({
 function TaskCardItem({ card, onOpen }: { card: TaskCard; onOpen: () => void }) {
   const link = safeArtifactUrl(card.artifactLink);
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-md border border-border bg-white shadow-sm">
+    <div className="pointer-events-auto relative min-w-0 overflow-hidden rounded-md border border-border bg-white shadow-sm">
       <button type="button" className="block min-h-20 min-w-0 w-full overflow-hidden p-2 pr-8 text-left hover:bg-slate-50" onClick={onOpen}>
         <p className="truncate text-xs font-medium">{card.title || "Без названия"}</p>
         <p className="mt-1 line-clamp-2 text-xs text-muted">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, Download, FileText, RotateCcw, Save, X } from "lucide-react";
+import { AlertTriangle, Check, Download, FileText, RotateCcw, Save, Search, X } from "lucide-react";
 import {
   AdminDocumentRow,
   Cohort,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { filterAdminDocumentRows, ReportFilter, studentDocumentFieldsReadiness } from "@/lib/admin-dashboard";
 
 type ReviewForm = Record<
   "reviewActivities" | "reviewCharacteristic" | "reviewEmployed" | "reviewNextPractice" | "reviewEmploymentOffer" | "reviewSuggestions" | "reviewGrade",
@@ -32,11 +33,14 @@ const emptyReview: ReviewForm = {
 
 export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
   const [rows, setRows] = useState<AdminDocumentRow[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [reportFilter, setReportFilter] = useState<ReportFilter>("ALL");
   const [forms, setForms] = useState<Record<string, ReviewForm>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -44,6 +48,7 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
 
   async function load() {
     setLoading(true);
+    setLoadFailed(false);
     setError(null);
     try {
       const result = await listAdminDocuments(cohort.id);
@@ -51,6 +56,7 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
       setForms(Object.fromEntries(result.rows.map((row) => [row.user.id, reviewFromData(row.data)])));
       setComments(Object.fromEntries(result.rows.map((row) => [row.user.id, row.data?.reportReviewComment ?? ""])));
     } catch (caught) {
+      setLoadFailed(true);
       setError(errorMessage(caught));
     } finally {
       setLoading(false);
@@ -107,21 +113,54 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
     }
   }
 
+  const visibleRows = filterAdminDocumentRows(rows, reportFilter, searchQuery);
+
   return (
     <div className="grid gap-3 rounded-md border border-border bg-slate-50 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-medium">Документы когорты</p>
-          <p className="mt-1 text-sm text-muted">Одобренных практикантов: {rows.length}</p>
+          <p className="mt-1 text-sm text-muted">Показано: {visibleRows.length} из {rows.length}</p>
         </div>
         <Button type="button" variant="secondary" onClick={load}>Обновить</Button>
       </div>
+      <div className="grid gap-2 sm:grid-cols-[minmax(240px,1fr)_220px]">
+        <label className="relative">
+          <span className="sr-only">Поиск практикантов</span>
+          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted" />
+          <Input
+            className="pl-9"
+            type="search"
+            placeholder="ФИО, email, группа или роль"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </label>
+        <select
+          aria-label="Состояние отчёта"
+          className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+          value={reportFilter}
+          onChange={(event) => setReportFilter(event.target.value as ReportFilter)}
+        >
+          <option value="ALL">Все отчёты</option>
+          <option value="NOT_UPLOADED">Не загружены</option>
+          <option value="PENDING">На проверке</option>
+          <option value="APPROVED">Одобрены</option>
+          <option value="CHANGES_REQUESTED">На доработке</option>
+        </select>
+      </div>
       {loading ? <p className="text-sm text-muted">Загрузка...</p> : null}
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      {error ? (
+        <div className="flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-red-700">{error}</p>
+          {loadFailed ? <Button type="button" variant="secondary" onClick={load}>Повторить</Button> : null}
+        </div>
+      ) : null}
       {message ? <p className="text-sm text-green-700">{message}</p> : null}
       {!loading && rows.length === 0 ? <p className="text-sm text-muted">Одобренных заявок пока нет.</p> : null}
+      {!loading && rows.length > 0 && visibleRows.length === 0 ? <p className="text-sm text-muted">Практикантов по выбранным условиям не найдено.</p> : null}
 
-      {!loading && rows.length > 0 ? (
+      {!loading && visibleRows.length > 0 ? (
         <div className="overflow-x-auto rounded-md border border-border bg-white">
           <table className="w-full min-w-[820px] border-collapse text-sm">
             <thead className="bg-slate-50 text-left text-xs text-muted">
@@ -135,17 +174,18 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {visibleRows.map((row) => {
                 const expanded = expandedUserId === row.user.id;
+                const fieldsReady = studentDocumentFieldsReadiness(row.data);
                 return (
                   <tr key={row.user.id} className="border-t border-border align-middle">
                     <td className="px-3 py-3">
                       <p className="font-medium">{row.data?.studentFio || row.user.email}</p>
                       <p className="mt-1 text-xs text-muted">{row.role?.name ?? row.user.email}</p>
                     </td>
-                    <td className="px-3 py-3 text-center"><Status ready={row.readiness.individualReady} label="ИЗ" compact /></td>
-                    <td className="px-3 py-3 text-center"><Status ready={row.readiness.reviewReady} label="Отзыв" compact /></td>
-                    <td className="px-3 py-3 text-center"><Status ready={row.readiness.titleReady} label="Титул" compact /></td>
+                    <td className="px-3 py-3 text-center"><Status ready={fieldsReady.individual} label="ИЗ" compact /></td>
+                    <td className="px-3 py-3 text-center"><Status ready={fieldsReady.review} label="Отзыв" compact /></td>
+                    <td className="px-3 py-3 text-center"><Status ready={fieldsReady.title} label="Титул" compact /></td>
                     <td className="px-3 py-3"><ReportStatus status={row.data?.reportReviewStatus ?? null} uploaded={row.readiness.reportUploaded} /></td>
                     <td className="px-3 py-3 text-right">
                       <Button type="button" variant="secondary" onClick={() => setExpandedUserId(expanded ? null : row.user.id)}>
@@ -160,10 +200,11 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
         </div>
       ) : null}
 
-      {rows.map((row) => {
+      {visibleRows.map((row) => {
         const form = forms[row.user.id] ?? emptyReview;
         const expanded = expandedUserId === row.user.id;
         const saving = savingUserId === row.user.id;
+        const fieldsReady = studentDocumentFieldsReadiness(row.data);
         if (!expanded) return null;
         return (
           <div key={row.user.id} className="rounded-md border border-border bg-white p-3">
@@ -172,9 +213,9 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
                 <p className="font-medium">{row.data?.studentFio || row.user.email}</p>
                 <p className="mt-1 text-sm text-muted">{row.user.email}{row.role ? ` · ${row.role.name}` : ""}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted">
-                  <Status ready={row.readiness.individualReady} label="ИЗ" />
-                  <Status ready={row.readiness.reviewReady} label="Отзыв" />
-                  <Status ready={row.readiness.titleReady} label="Титульный лист" />
+                  <Status ready={fieldsReady.individual} label="ИЗ" />
+                  <Status ready={fieldsReady.review} label="Отзыв" />
+                  <Status ready={fieldsReady.title} label="Титульный лист" />
                   <ReportStatus status={row.data?.reportReviewStatus ?? null} uploaded={row.readiness.reportUploaded} />
                 </div>
               </div>

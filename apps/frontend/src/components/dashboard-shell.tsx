@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, ListChecks, LogOut, Plus, Settings, Trash2, UserRound } from "lucide-react";
+import { ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, LayoutDashboard, ListChecks, LogOut, Plus, Search, Settings, Trash2, UserRound } from "lucide-react";
 import {
   AdminApplication,
   ApiError,
@@ -13,6 +13,8 @@ import {
   clearToken,
   createCohort,
   currentUser,
+  getTaskBoard,
+  listAdminDocuments,
   listCohortApplications,
   listCohorts,
   myApplications,
@@ -29,6 +31,7 @@ import { OverviewLink } from "@/components/overview-link";
 import { StudentDocuments } from "@/components/student-documents";
 import { AdminDocumentsPanel } from "@/components/admin-documents";
 import { TaskBoard } from "@/components/task-board";
+import { buildAdminOverview, filterAdminApplications, type AdminOverviewData } from "@/lib/admin-dashboard";
 
 type CohortForm = {
   name: string;
@@ -55,7 +58,7 @@ let surveyDraftSequence = 0;
 type Answers = Record<string, string>;
 type AnswersByCohort = Record<string, Answers>;
 type StudentTab = "profile" | "applications" | "documents" | "tasks";
-type AdminTab = "applications" | "documents" | "tasks" | "settings";
+type AdminTab = "overview" | "applications" | "documents" | "tasks" | "settings";
 
 const initialForm: CohortForm = {
   name: "",
@@ -795,7 +798,7 @@ function AdminCohorts({
 }
 
 function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise<void> }) {
-  const [activeTab, setActiveTab] = useState<AdminTab>("applications");
+  const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [surveyFields, setSurveyFields] = useState(surveyDraftsFromCohort(cohort));
   const [roleNames, setRoleNames] = useState(cohort.roles.map((role) => role.name));
   const [newRole, setNewRole] = useState("");
@@ -885,6 +888,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
           active={activeTab}
           variant="sidebar"
           items={[
+            { id: "overview", label: "Обзор", icon: LayoutDashboard },
             { id: "applications", label: "Заявки", icon: ClipboardList },
             { id: "documents", label: "Документы", icon: FileText },
             { id: "tasks", label: "Задачи", icon: ListChecks },
@@ -894,6 +898,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
         />
 
         <div className="min-w-0">
+          {activeTab === "overview" ? <AdminOverview cohort={cohort} onNavigate={setActiveTab} /> : null}
           {activeTab === "applications" ? <AdminApplicationsPanel cohort={cohort} /> : null}
           {activeTab === "documents" ? <AdminDocumentsPanel cohort={cohort} /> : null}
           {activeTab === "tasks" ? <TaskBoard cohortId={cohort.id} currentUserId="" isAdmin /> : null}
@@ -977,6 +982,164 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
   );
 }
 
+function AdminOverview({ cohort, onNavigate }: { cohort: Cohort; onNavigate: (tab: AdminTab) => void }) {
+  const [data, setData] = useState<AdminOverviewData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadOverview() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const [applicationResult, documentResult, taskResult] = await Promise.all([
+          listCohortApplications(cohort.id),
+          listAdminDocuments(cohort.id),
+          getTaskBoard(cohort.id, true)
+        ]);
+
+        if (!active) return;
+
+        setData(buildAdminOverview(applicationResult.applications, documentResult.rows, taskResult));
+      } catch (caught) {
+        if (active) {
+          setError(caught instanceof Error ? caught.message : "Не удалось загрузить сводку когорты");
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadOverview();
+    return () => {
+      active = false;
+    };
+  }, [cohort.id, reloadKey]);
+
+  if (loading) {
+    return <Card className="p-5 text-sm text-muted">Загрузка сводки...</Card>;
+  }
+
+  if (error || !data) {
+    return (
+      <Card className="border-red-200 bg-red-50 p-5" role="alert">
+        <p className="text-sm font-medium text-red-700">{error ?? "Сводка недоступна"}</p>
+        <Button type="button" variant="secondary" className="mt-3" onClick={() => setReloadKey((value) => value + 1)}>
+          Повторить
+        </Button>
+      </Card>
+    );
+  }
+
+  const incompleteDocumentProfiles = data.participants - data.completeDocumentProfiles;
+  const documentProgress = overviewPercent(data.completeDocumentProfiles, data.participants);
+  const taskProgress = overviewPercent(data.completedTasks, data.totalTasks);
+  const metrics = [
+    { label: "Все заявки", value: data.totalApplications, detail: `${data.pendingApplications} ожидают решения, ${data.rejectedApplications} отклонено`, icon: ClipboardList, tab: "applications" as AdminTab },
+    { label: "Участники", value: data.approvedApplications, detail: `${data.participants} доступны в документах`, icon: UserRound, tab: "applications" as AdminTab },
+    { label: "Данные документов", value: `${data.completeDocumentProfiles}/${data.participants}`, detail: `${incompleteDocumentProfiles} анкет заполнено не полностью`, icon: FileText, tab: "documents" as AdminTab },
+    { label: "Загруженные отчёты", value: `${data.reportsUploaded}/${data.participants}`, detail: `${data.reportsApproved} одобрено`, icon: FileText, tab: "documents" as AdminTab },
+    { label: "Отчёты на проверке", value: data.reportsToReview, detail: `${data.reportsForRevision} возвращено на доработку`, icon: FileText, tab: "documents" as AdminTab },
+    { label: "Выполненные задачи", value: `${data.completedTasks}/${data.totalTasks}`, detail: `${data.incompleteTasks} без результата`, icon: ListChecks, tab: "tasks" as AdminTab }
+  ];
+
+  return (
+    <section className="grid gap-5" aria-labelledby="admin-overview-title">
+      <div>
+        <h3 id="admin-overview-title" className="text-lg font-semibold">Сводка по когорте</h3>
+        <p className="mt-1 text-sm text-muted">Текущее состояние заявок, документов и задач.</p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {metrics.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <button
+              key={metric.label}
+              type="button"
+              className="min-h-32 rounded-md border border-border bg-white p-4 text-left shadow-panel transition hover:border-primary/40 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={() => onNavigate(metric.tab)}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-muted">{metric.label}</span>
+                <Icon className="h-5 w-5 text-primary" />
+              </div>
+              <p className="mt-4 text-3xl font-semibold">{metric.value}</p>
+              <p className="mt-2 text-xs text-muted">{metric.detail}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid gap-4 border-t border-border pt-5 md:grid-cols-2">
+        <OverviewProgress
+          label="Заполненность документов"
+          value={documentProgress}
+          detail={`${data.completeDocumentProfiles} из ${data.participants} участников заполнили данные`}
+        />
+        <OverviewProgress
+          label="Выполнение задач"
+          value={taskProgress}
+          detail={`${data.completedTasks} из ${data.totalTasks} задач содержат результат`}
+        />
+      </div>
+
+      {(data.pendingApplications > 0 || incompleteDocumentProfiles > 0 || data.reportsToReview > 0 || data.reportsForRevision > 0) ? (
+        <div className="border-t border-border pt-5">
+          <h4 className="font-semibold">Требуют внимания</h4>
+          <div className="mt-3 grid gap-2 text-sm">
+            {data.pendingApplications > 0 ? (
+              <button type="button" className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-3 text-left hover:bg-slate-50" onClick={() => onNavigate("applications")}>
+                <span>Заявки без решения</span><span className="font-semibold text-primary">{data.pendingApplications}</span>
+              </button>
+            ) : null}
+            {incompleteDocumentProfiles > 0 ? (
+              <button type="button" className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-3 text-left hover:bg-slate-50" onClick={() => onNavigate("documents")}>
+                <span>Участники с незаполненными данными</span><span className="font-semibold text-primary">{incompleteDocumentProfiles}</span>
+              </button>
+            ) : null}
+            {data.reportsToReview > 0 ? (
+              <button type="button" className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-3 text-left hover:bg-slate-50" onClick={() => onNavigate("documents")}>
+                <span>Новые отчёты на проверке</span><span className="font-semibold text-primary">{data.reportsToReview}</span>
+              </button>
+            ) : null}
+            {data.reportsForRevision > 0 ? (
+              <button type="button" className="flex items-center justify-between rounded-md border border-border bg-white px-3 py-3 text-left hover:bg-slate-50" onClick={() => onNavigate("documents")}>
+                <span>Отчёты на доработке</span><span className="font-semibold text-red-700">{data.reportsForRevision}</span>
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <p className="border-t border-border pt-5 text-sm text-muted">Сейчас нет заявок и отчётов, ожидающих действий администратора.</p>
+      )}
+    </section>
+  );
+}
+
+function OverviewProgress({ label, value, detail }: { label: string; value: number; detail: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="font-medium">{label}</span>
+        <span className="font-semibold text-primary">{value}%</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
+        <div className="h-full bg-primary transition-[width]" style={{ width: `${value}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-muted">{detail}</p>
+    </div>
+  );
+}
+
+function overviewPercent(completed: number, total: number) {
+  return total === 0 ? 0 : Math.round((completed / total) * 100);
+}
+
 function DashboardTabs({
   active,
   items,
@@ -1003,7 +1166,7 @@ function DashboardTabs({
           <p className="text-sm font-semibold">Разделы когорты</p>
         </div>
       ) : null}
-      <div className={sidebar ? "grid grid-cols-4 p-1.5 lg:flex lg:flex-col" : "flex min-w-max gap-1"}>
+      <div className={sidebar ? "grid grid-cols-3 p-1.5 lg:flex lg:flex-col" : "flex min-w-max gap-1"}>
         {items.map((item) => {
           const Icon = item.icon;
           const selected = active === item.id;
@@ -1063,10 +1226,12 @@ function InlineFeedback({ error, message }: { error: string | null; message: str
 function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
   const [applications, setApplications] = useState<AdminApplication[]>([]);
   const [statusFilter, setStatusFilter] = useState<"ALL" | Application["status"]>("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
   const [expandedApplicationId, setExpandedApplicationId] = useState<string | null>(null);
   const [roleSelection, setRoleSelection] = useState<Record<string, string>>({});
   const [rejectComments, setRejectComments] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [savingApplicationId, setSavingApplicationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -1077,6 +1242,7 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
 
   async function loadApplications() {
     setLoading(true);
+    setLoadFailed(false);
     setError(null);
 
     try {
@@ -1086,6 +1252,7 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
         Object.fromEntries(result.applications.map((application) => [application.id, application.role?.id ?? ""]))
       );
     } catch (caught) {
+      setLoadFailed(true);
       setError(caught instanceof Error ? caught.message : "Не получилось загрузить заявки");
     } finally {
       setLoading(false);
@@ -1134,36 +1301,54 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
     }
   }
 
-  const visibleApplications =
-    statusFilter === "ALL"
-      ? applications
-      : applications.filter((application) => application.status === statusFilter);
+  const visibleApplications = filterAdminApplications(applications, statusFilter, searchQuery);
 
   return (
     <div className="mt-3 grid gap-3 rounded-md border border-border bg-slate-50 p-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-medium">Заявки когорты</p>
-          <p className="mt-1 text-sm text-muted">Всего заявок: {applications.length}</p>
+          <p className="mt-1 text-sm text-muted">
+            Показано: {visibleApplications.length} из {applications.length}
+          </p>
         </div>
-        <select
-          className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-          value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value as "ALL" | Application["status"])}
-        >
-          <option value="ALL">Все статусы</option>
-          <option value="PENDING">На рассмотрении</option>
-          <option value="APPROVED">Одобрена</option>
-          <option value="REJECTED">Отклонена</option>
-        </select>
+        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(240px,1fr)_190px]">
+          <label className="relative">
+            <span className="sr-only">Поиск заявок</span>
+            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted" />
+            <Input
+              className="pl-9"
+              type="search"
+              placeholder="ФИО, email, группа или роль"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </label>
+          <select
+            aria-label="Статус заявки"
+            className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as "ALL" | Application["status"])}
+          >
+            <option value="ALL">Все статусы</option>
+            <option value="PENDING">На рассмотрении</option>
+            <option value="APPROVED">Одобрена</option>
+            <option value="REJECTED">Отклонена</option>
+          </select>
+        </div>
       </div>
 
       {loading ? <p className="text-sm text-muted">Загрузка заявок...</p> : null}
-      {error ? <p className="text-sm text-red-700">{error}</p> : null}
+      {error ? (
+        <div className="flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-red-700">{error}</p>
+          {loadFailed ? <Button type="button" variant="secondary" onClick={loadApplications}>Повторить</Button> : null}
+        </div>
+      ) : null}
       {message ? <p className="text-sm text-green-700">{message}</p> : null}
 
       {!loading && visibleApplications.length === 0 ? (
-        <p className="text-sm text-muted">Заявок с выбранным статусом пока нет.</p>
+        <p className="text-sm text-muted">Заявок по выбранным условиям не найдено.</p>
       ) : null}
 
       {visibleApplications.map((application) => {
