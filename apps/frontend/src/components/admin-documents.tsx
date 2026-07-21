@@ -161,7 +161,36 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
       {!loading && rows.length > 0 && visibleRows.length === 0 ? <p className="text-sm text-muted">Практикантов по выбранным условиям не найдено.</p> : null}
 
       {!loading && visibleRows.length > 0 ? (
-        <div className="overflow-x-auto rounded-md border border-border bg-white">
+        <div className="grid gap-3 md:hidden">
+          {visibleRows.map((row) => {
+            const expanded = expandedUserId === row.user.id;
+            const fieldsReady = studentDocumentFieldsReadiness(row.data);
+            return (
+              <div key={row.user.id} className="rounded-md border border-border bg-white p-3">
+                <div className="min-w-0">
+                  <p className="break-words font-medium">{row.data?.studentFio || row.user.email}</p>
+                  <p className="mt-1 break-all text-xs text-muted">{row.user.email}</p>
+                  {row.role ? <p className="mt-1 text-xs text-muted">{row.role.name}</p> : null}
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 border-y border-border py-3 text-xs">
+                  <Status ready={fieldsReady.individual} label="ИЗ" />
+                  <Status ready={fieldsReady.review} label="Отзыв" />
+                  <Status ready={fieldsReady.title} label="Титул" />
+                </div>
+                <div className="mt-3">
+                  <ReportStatus status={row.data?.reportReviewStatus ?? null} uploaded={row.readiness.reportUploaded} />
+                </div>
+                <Button className="mt-3 w-full" type="button" variant="secondary" onClick={() => setExpandedUserId(expanded ? null : row.user.id)}>
+                  <FileText className="mr-2 h-4 w-4" />{expanded ? "Свернуть" : "Открыть документы"}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {!loading && visibleRows.length > 0 ? (
+        <div className="hidden overflow-x-auto rounded-md border border-border bg-white md:block">
           <table className="w-full min-w-[820px] border-collapse text-sm">
             <thead className="bg-slate-50 text-left text-xs text-muted">
               <tr>
@@ -207,7 +236,7 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
         const fieldsReady = studentDocumentFieldsReadiness(row.data);
         if (!expanded) return null;
         return (
-          <div key={row.user.id} className="rounded-md border border-border bg-white p-3">
+          <div key={row.user.id} className="rounded-md border border-border bg-white p-3 sm:p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-medium">{row.data?.studentFio || row.user.email}</p>
@@ -219,7 +248,7 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
                   <ReportStatus status={row.data?.reportReviewStatus ?? null} uploaded={row.readiness.reportUploaded} />
                 </div>
               </div>
-              <Button type="button" variant="secondary" onClick={() => setExpandedUserId(expanded ? null : row.user.id)}>
+              <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={() => setExpandedUserId(expanded ? null : row.user.id)}>
                 <FileText className="mr-2 h-4 w-4" />{expanded ? "Свернуть" : "Документы"}
               </Button>
             </div>
@@ -242,15 +271,15 @@ export function AdminDocumentsPanel({ cohort }: { cohort: Cohort }) {
                       onChange={(event) => setComments((current) => ({ ...current, [row.user.id]: event.target.value }))}
                     />
                   </label>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" disabled={!row.readiness.reportUploaded || saving} onClick={() => reviewReport(row, "APPROVED")}>
+                  <div className="grid gap-2 sm:flex sm:flex-wrap">
+                    <Button className="w-full sm:w-auto" type="button" disabled={!row.readiness.reportUploaded || saving} onClick={() => reviewReport(row, "APPROVED")}>
                       <Check className="mr-2 h-4 w-4" />Одобрить
                     </Button>
-                    <Button type="button" variant="secondary" disabled={!row.readiness.reportUploaded || saving || !(comments[row.user.id]?.trim())} onClick={() => reviewReport(row, "CHANGES_REQUESTED")}>
+                    <Button className="w-full sm:w-auto" type="button" variant="secondary" disabled={!row.readiness.reportUploaded || saving || !(comments[row.user.id]?.trim())} onClick={() => reviewReport(row, "CHANGES_REQUESTED")}>
                       <AlertTriangle className="mr-2 h-4 w-4" />Вернуть на доработку
                     </Button>
                     {row.data?.reportReviewStatus === "APPROVED" ? (
-                      <Button type="button" variant="secondary" disabled={saving} onClick={() => reviewReport(row, "PENDING")}>
+                      <Button className="w-full sm:w-auto" type="button" variant="secondary" disabled={saving} onClick={() => reviewReport(row, "PENDING")}>
                         <RotateCcw className="mr-2 h-4 w-4" />Снять допуск
                       </Button>
                     ) : null}

@@ -1,6 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 const TOKEN_KEY = "practice_token";
 const PENDING_APPLICATION_KEY = "practice_pending_application";
+export { clearApplicationDraft, getApplicationDraft, saveApplicationDraft } from "./application-drafts";
 
 export class ApiError extends Error {
   constructor(message: string, public status?: number) {
@@ -22,6 +23,7 @@ export type Cohort = {
   applicationEnd: string;
   practiceStart: string;
   practiceEnd: string;
+  completedAt: string | null;
   surveyFields: Array<{
     id: string;
     label: string;
@@ -39,7 +41,7 @@ export type Cohort = {
 
 export type Application = {
   id: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "REMOVED";
   answers: Record<string, unknown>;
   reviewComment: string | null;
   createdAt: string;
@@ -61,6 +63,7 @@ export type StudentDocumentData = {
   userId: string;
   cohortId: string;
   studentFio: string | null;
+  studentFioGenitive: string | null;
   group: string | null;
   directionCode: string | null;
   directionName: string | null;
@@ -98,6 +101,12 @@ export type DocumentReadiness = {
   titleReason: string | null;
 };
 
+export type EmailNotificationResult = {
+  recipients: number;
+  sent: number;
+  configured: boolean;
+};
+
 export type AdminDocumentRow = {
   applicationId: string;
   user: { id: string; email: string };
@@ -132,6 +141,7 @@ export type TaskBoard = {
     name: string;
     practiceStart: string;
     practiceEnd: string;
+    completedAt: string | null;
   };
   participants: TaskParticipant[];
 };
@@ -259,6 +269,7 @@ export async function createCohort(payload: {
   practiceStart: string;
   practiceEnd: string;
   surveyFields: Array<{
+    id?: string;
     label: string;
     type: "TEXT" | "TEXTAREA" | "SELECT";
     options?: string[];
@@ -277,6 +288,7 @@ export async function createCohort(payload: {
 export async function updateCohortSurvey(
   cohortId: string,
   surveyFields: Array<{
+    id?: string;
     label: string;
     type: "TEXT" | "TEXTAREA" | "SELECT";
     options?: string[];
@@ -297,9 +309,16 @@ export async function updateCohortRoles(cohortId: string, roles: string[]) {
 }
 
 export async function updateTestTask(cohortId: string, content: string, published: boolean) {
-  return api<{ testTask: Cohort["testTask"] }>(`/cohorts/${cohortId}/test-task`, {
+  return api<{ testTask: Cohort["testTask"]; notification: EmailNotificationResult | null }>(`/cohorts/${cohortId}/test-task`, {
     method: "PUT",
     body: JSON.stringify({ content, published })
+  });
+}
+
+export async function setCohortCompletion(cohortId: string, completed: boolean) {
+  return api<{ cohort: Cohort }>(`/cohorts/${cohortId}/completion`, {
+    method: "PATCH",
+    body: JSON.stringify({ completed })
   });
 }
 
@@ -326,6 +345,13 @@ export async function updateApplicationStatus(payload: {
 export async function submitApplication(cohortId: string, answers: Record<string, unknown> = {}) {
   return api<{ application: Application }>(`/cohorts/${cohortId}/applications`, {
     method: "POST",
+    body: JSON.stringify({ answers })
+  });
+}
+
+export async function updateMyApplication(applicationId: string, answers: Record<string, unknown>) {
+  return api<{ application: Application }>(`/applications/${applicationId}`, {
+    method: "PATCH",
     body: JSON.stringify({ answers })
   });
 }
@@ -375,6 +401,7 @@ export async function saveMyDocumentData(
   cohortId: string,
   values: Partial<Pick<StudentDocumentData,
     | "studentFio"
+    | "studentFioGenitive"
     | "group"
     | "directionCode"
     | "directionName"
@@ -382,6 +409,7 @@ export async function saveMyDocumentData(
     | "specialty"
     | "practiceTopic"
     | "mainStageTasks"
+    | "supervisorUrfuName"
   >>
 ) {
   return api<{ data: StudentDocumentData; readiness: DocumentReadiness }>(

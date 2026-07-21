@@ -1,12 +1,14 @@
 export const writableStudentFields = [
   "studentFio",
+  "studentFioGenitive",
   "group",
   "directionCode",
   "directionName",
   "programName",
   "specialty",
   "practiceTopic",
-  "mainStageTasks"
+  "mainStageTasks",
+  "supervisorUrfuName"
 ] as const;
 
 export const writableReviewFields = [
@@ -20,13 +22,14 @@ export const writableReviewFields = [
 ] as const;
 
 const individualFields = [
-  "studentFio",
+  "studentFioGenitive",
   "group",
   "directionCode",
   "directionName",
   "programName",
   "practiceTopic",
-  "mainStageTasks"
+  "mainStageTasks",
+  "supervisorUrfuName"
 ] as const;
 
 const titleFields = ["studentFio", "group", "specialty", "practiceTopic"] as const;
@@ -67,13 +70,15 @@ function hasFields(data: Record<string, unknown> | null, fields: readonly string
 
 const fieldLabels: Record<string, string> = {
   studentFio: "ФИО",
+  studentFioGenitive: "ФИО в родительном падеже",
   group: "группа",
   directionCode: "код направления",
   directionName: "наименование направления",
   programName: "образовательная программа",
   specialty: "специальность",
   practiceTopic: "тема практики",
-  mainStageTasks: "работы основного этапа"
+  mainStageTasks: "работы основного этапа",
+  supervisorUrfuName: "руководитель практики от УрФУ"
 };
 
 function missingFieldsReason(data: Record<string, unknown> | null, fields: readonly string[]) {

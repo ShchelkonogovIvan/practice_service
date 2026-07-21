@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { activeCohort, Cohort, getToken, publicCohort, savePendingApplication, submitApplication } from "@/lib/api";
+import { activeCohort, clearApplicationDraft, Cohort, getApplicationDraft, getToken, publicCohort, saveApplicationDraft, savePendingApplication, submitApplication } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,19 +27,20 @@ export function PublicCohorts({ cohortId }: { cohortId?: string }) {
       : activeCohort().then((result) => result.cohorts ?? (result.cohort ? [result.cohort] : []));
 
     request
-      .then(setCohorts)
+      .then((result) => {
+        setCohorts(result);
+        setAnswersByCohort(Object.fromEntries(result.map((cohort) => [cohort.id, getApplicationDraft(cohort.id)])));
+      })
       .catch((caught) => setLoadError(caught instanceof Error ? caught.message : "Не удалось загрузить когорты"))
       .finally(() => setLoading(false));
   }, [cohortId]);
 
   function setAnswer(cohortId: string, fieldId: string, value: string) {
-    setAnswersByCohort((current) => ({
-      ...current,
-      [cohortId]: {
-        ...(current[cohortId] ?? {}),
-        [fieldId]: value
-      }
-    }));
+    setAnswersByCohort((current) => {
+      const answers = { ...(current[cohortId] ?? {}), [fieldId]: value };
+      saveApplicationDraft(cohortId, answers);
+      return { ...current, [cohortId]: answers };
+    });
   }
 
   async function onSubmit(event: React.FormEvent, cohort: Cohort) {
@@ -65,6 +66,7 @@ export function PublicCohorts({ cohortId }: { cohortId?: string }) {
 
     try {
       await submitApplication(cohort.id, answers);
+      clearApplicationDraft(cohort.id);
       router.push("/dashboard");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не получилось отправить заявку");

@@ -8,7 +8,13 @@ export async function notifyApplicationDecision(
   status: ApplicationStatus,
   comment: string | null
 ) {
-  const statusText = status === "APPROVED" ? "одобрена" : status === "REJECTED" ? "отклонена" : "возвращена на рассмотрение";
+  const statusText = status === "APPROVED"
+    ? "одобрена"
+    : status === "REJECTED"
+      ? "отклонена"
+      : status === "REMOVED"
+        ? "исключена из когорты"
+        : "возвращена на рассмотрение";
   return sendEmail({
     to: email,
     subject: `Статус заявки на практику: ${statusText}`,
@@ -20,17 +26,28 @@ export async function notifyApplicationDecision(
   });
 }
 
-export async function notifyTestTaskPublished(emails: string[], cohortName: string) {
+export async function notifyTestTaskPublished(
+  emails: string[],
+  cohortName: string,
+  content: string,
+  updated = false
+) {
   const uniqueEmails = [...new Set(emails)];
   const results = await Promise.all(uniqueEmails.map((email) => sendEmail({
     to: email,
-    subject: `Опубликовано тестовое задание: ${cohortName}`,
-    text: `Для когорты «${cohortName}» опубликовано тестовое задание.\n\nОткрыть личный кабинет: ${env.appUrl}/dashboard`
+    subject: `${updated ? "Обновлено" : "Опубликовано"} тестовое задание: ${cohortName}`,
+    text: [
+      `Для когорты «${cohortName}» ${updated ? "обновлено" : "опубликовано"} тестовое задание.`,
+      "Тестовое задание:",
+      content,
+      `Открыть личный кабинет: ${env.appUrl}/dashboard`
+    ].join("\n\n")
   })));
 
   return {
     recipients: uniqueEmails.length,
-    sent: results.filter((result) => result.sent).length
+    sent: results.filter((result) => result.sent).length,
+    configured: results.every((result) => result.sent || result.reason !== "SMTP is not configured")
   };
 }
 

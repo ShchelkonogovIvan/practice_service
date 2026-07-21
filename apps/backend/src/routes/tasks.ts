@@ -22,6 +22,7 @@ tasksRouter.get(
         name: true,
         practiceStart: true,
         practiceEnd: true,
+        completedAt: true,
         surveyFields: { select: { id: true, label: true } }
       }
     });
@@ -85,7 +86,8 @@ tasksRouter.get(
         id: cohort.id,
         name: cohort.name,
         practiceStart: cohort.practiceStart,
-        practiceEnd: cohort.practiceEnd
+        practiceEnd: cohort.practiceEnd,
+        completedAt: cohort.completedAt
       },
       participants
     });
@@ -100,6 +102,9 @@ tasksRouter.post(
     }
 
     const application = await requireApprovedApplication(req.user!.id, req.params.cohortId);
+    if (application.cohort.completedAt) {
+      throw badRequest("Практика завершена, добавление задач недоступно");
+    }
     const body = asObject(req.body);
     const date = parseTaskDate(stringField(body, "date"));
 
@@ -125,13 +130,22 @@ tasksRouter.patch(
   "/tasks/:taskId",
   asyncHandler(async (req, res) => {
     const body = asObject(req.body);
-    const card = await prisma.taskCard.findUnique({ where: { id: req.params.taskId } });
+    const card = await prisma.taskCard.findUnique({
+      where: { id: req.params.taskId },
+      include: { cohort: { select: { completedAt: true } } }
+    });
     if (!card) {
       throw notFound("Задача не найдена");
     }
+    if (card.cohort.completedAt) {
+      throw badRequest("Практика завершена, изменение задач недоступно");
+    }
     assertCanEditTaskCard(req.user!.role, req.user!.id, card.userId);
     if (req.user!.role !== UserRole.ADMIN) {
-      await requireApprovedApplication(req.user!.id, card.cohortId);
+      const application = await requireApprovedApplication(req.user!.id, card.cohortId);
+      if (application.cohort.completedAt) {
+        throw badRequest("Практика завершена, изменение задач недоступно");
+      }
     }
 
     const updated = await prisma.taskCard.update({

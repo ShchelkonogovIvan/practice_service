@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
-import { clearPendingApplication, getPendingApplication, login, register, setToken, submitApplication } from "@/lib/api";
+import { clearApplicationDraft, clearPendingApplication, getPendingApplication, login, register, setToken, submitApplication } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -54,6 +54,7 @@ export function AuthForm() {
       const pendingApplication = getPendingApplication();
       if (pendingApplication) {
         await submitApplication(pendingApplication.cohortId, pendingApplication.answers);
+        clearApplicationDraft(pendingApplication.cohortId);
         clearPendingApplication();
       }
 

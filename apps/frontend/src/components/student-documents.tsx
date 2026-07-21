@@ -16,19 +16,21 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 type FormValues = Record<
-  "studentFio" | "group" | "directionCode" | "directionName" | "programName" | "specialty" | "practiceTopic" | "mainStageTasks",
+  "studentFio" | "studentFioGenitive" | "group" | "directionCode" | "directionName" | "programName" | "specialty" | "practiceTopic" | "mainStageTasks" | "supervisorUrfuName",
   string
 >;
 
 const emptyForm: FormValues = {
   studentFio: "",
+  studentFioGenitive: "",
   group: "",
   directionCode: "",
   directionName: "",
   programName: "",
   specialty: "",
   practiceTopic: "",
-  mainStageTasks: ""
+  mainStageTasks: "",
+  supervisorUrfuName: ""
 };
 
 const emptyReadiness: DocumentReadiness = {
@@ -146,7 +148,7 @@ export function StudentDocuments({ application }: { application: Application }) 
   const cohortId = application.cohort.id;
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Документы</h2>
@@ -173,11 +175,13 @@ export function StudentDocuments({ application }: { application: Application }) 
       <form className="mt-5 grid gap-4" onSubmit={save}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="ФИО" value={form.studentFio} onChange={(value) => setForm({ ...form, studentFio: value })} onBlur={autosave} />
+          <Field label="ФИО в родительном падеже" value={form.studentFioGenitive} onChange={(value) => setForm({ ...form, studentFioGenitive: value })} onBlur={autosave} />
           <Field label="Группа" value={form.group} onChange={(value) => setForm({ ...form, group: value })} onBlur={autosave} />
           <Field label="Код направления" value={form.directionCode} onChange={(value) => setForm({ ...form, directionCode: value })} onBlur={autosave} />
           <Field label="Наименование направления" value={form.directionName} onChange={(value) => setForm({ ...form, directionName: value })} onBlur={autosave} />
           <Field label="Образовательная программа" value={form.programName} onChange={(value) => setForm({ ...form, programName: value })} onBlur={autosave} />
           <Field label="Специальность для титульного листа" value={form.specialty} onChange={(value) => setForm({ ...form, specialty: value })} onBlur={autosave} />
+          <Field label="Руководитель практики от УрФУ" value={form.supervisorUrfuName} onChange={(value) => setForm({ ...form, supervisorUrfuName: value })} onBlur={autosave} />
         </div>
         <Field label="Тема практики" value={form.practiceTopic} onChange={(value) => setForm({ ...form, practiceTopic: value })} onBlur={autosave} />
         <label className="grid gap-2 text-sm font-medium">
@@ -186,7 +190,7 @@ export function StudentDocuments({ application }: { application: Application }) 
         </label>
         {feedbackArea === "form" ? <FeedbackNotice error={error} message={message} /> : null}
 
-        <Button type="submit" disabled={saving} onMouseDown={(event) => event.preventDefault()}>
+        <Button className="w-full sm:w-auto" type="submit" disabled={saving} onMouseDown={(event) => event.preventDefault()}>
           <Save className="mr-2 h-4 w-4" />
           {saving ? "Сохраняем..." : "Сохранить данные"}
         </Button>
@@ -200,14 +204,14 @@ export function StudentDocuments({ application }: { application: Application }) 
           </p>
         ) : null}
         {feedbackArea === "report" ? <FeedbackNotice error={error} message={message} /> : null}
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Input className="max-w-md" accept=".docx,.pdf" type="file" onChange={(event) => setReport(event.target.files?.[0] ?? null)} />
-          <Button type="button" disabled={!report || uploading} onClick={uploadReport}>
+        <div className="mt-3 grid gap-3 sm:flex sm:flex-wrap sm:items-center">
+          <Input className="min-w-0 w-full sm:max-w-md" accept=".docx,.pdf" type="file" onChange={(event) => setReport(event.target.files?.[0] ?? null)} />
+          <Button className="w-full sm:w-auto" type="button" disabled={!report || uploading} onClick={uploadReport}>
             <Upload className="mr-2 h-4 w-4" />
             {uploading ? "Загружаем..." : "Загрузить"}
           </Button>
           {readiness.reportUploaded ? (
-            <Button type="button" variant="secondary" onClick={() => download(`/cohorts/${cohortId}/documents/me/report`, data?.reportFileName ?? "practice-report", "report")}>
+            <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={() => download(`/cohorts/${cohortId}/documents/me/report`, data?.reportFileName ?? "practice-report", "report")}>
               <Download className="mr-2 h-4 w-4" />
               Скачать отчёт
             </Button>

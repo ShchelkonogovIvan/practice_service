@@ -14,7 +14,8 @@ export async function requireApprovedApplication(userId: string, cohortId: strin
       cohort: {
         select: {
           practiceStart: true,
-          practiceEnd: true
+          practiceEnd: true,
+          completedAt: true
         }
       }
     }

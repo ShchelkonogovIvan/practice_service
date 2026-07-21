@@ -22,6 +22,7 @@ enum ApplicationStatus {
   PENDING
   APPROVED
   REJECTED
+  REMOVED
 }
 
 enum ReportReviewStatus {
@@ -51,6 +52,7 @@ model Cohort {
   applicationEnd   DateTime              @map("application_end")
   practiceStart    DateTime              @map("practice_start")
   practiceEnd      DateTime              @map("practice_end")
+  completedAt      DateTime?             @map("completed_at")
   createdAt        DateTime              @default(now()) @map("created_at")
   updatedAt        DateTime              @updatedAt @map("updated_at")
   surveyFields     SurveyField[]
@@ -126,6 +128,7 @@ model StudentDocumentData {
   userId                String   @map("user_id")
   cohortId              String   @map("cohort_id")
   studentFio            String?  @map("student_fio")
+  studentFioGenitive    String?  @map("student_fio_genitive")
   group                 String?
   directionCode         String?  @map("direction_code")
   directionName         String?  @map("direction_name")

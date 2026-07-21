@@ -11,6 +11,7 @@ import {
 test("document indicators depend only on fields filled by the student", () => {
   const complete = documentData({
     studentFio: "Иванов Иван",
+    studentFioGenitive: "Иванова Ивана",
     group: "РИ-13003",
     directionCode: "09.03.03",
     directionName: "Прикладная информатика",
@@ -18,6 +19,7 @@ test("document indicators depend only on fields filled by the student", () => {
     specialty: "Программист",
     practiceTopic: "Сервис практики",
     mainStageTasks: "Разработка и тестирование",
+    supervisorUrfuName: "Корнякова Елена Михайловна",
     reviewCharacteristic: null,
     reportReviewStatus: null
   });
@@ -150,6 +152,7 @@ function documentData(overrides: Partial<StudentDocumentData>): StudentDocumentD
     userId: "user-id",
     cohortId: "cohort-id",
     studentFio: null,
+    studentFioGenitive: null,
     group: null,
     directionCode: null,
     directionName: null,
@@ -179,6 +182,7 @@ function documentData(overrides: Partial<StudentDocumentData>): StudentDocumentD
 function completeStudentData(overrides: Partial<StudentDocumentData> = {}) {
   return documentData({
     studentFio: "Иванов Иван",
+    studentFioGenitive: "Иванова Ивана",
     group: "РИ-13003",
     directionCode: "09.03.03",
     directionName: "Прикладная информатика",
@@ -186,6 +190,7 @@ function completeStudentData(overrides: Partial<StudentDocumentData> = {}) {
     specialty: "Программист",
     practiceTopic: "Сервис практики",
     mainStageTasks: "Разработка и тестирование",
+    supervisorUrfuName: "Корнякова Елена Михайловна",
     ...overrides
   });
 }
@@ -196,7 +201,8 @@ function taskBoard(doneValues: Array<string | null>): TaskBoard {
       id: "cohort-id",
       name: "Летняя практика",
       practiceStart: "2026-07-01T00:00:00.000Z",
-      practiceEnd: "2026-07-31T00:00:00.000Z"
+      practiceEnd: "2026-07-31T00:00:00.000Z",
+      completedAt: null
     },
     participants: [{
       userId: "user-id",

@@ -33,12 +33,18 @@ export function validateApplicationAnswers(answers: Record<string, unknown>, sur
 }
 
 export function assertApplicationDecision(
-  status: "PENDING" | "APPROVED" | "REJECTED",
+  status: "PENDING" | "APPROVED" | "REJECTED" | "REMOVED",
   roleId?: string,
   _reviewComment?: string
 ) {
   if (status === "APPROVED" && !roleId) {
     throw badRequest("Для одобрения заявки необходимо выбрать роль");
+  }
+}
+
+export function assertApplicationEditable(status: "PENDING" | "APPROVED" | "REJECTED" | "REMOVED") {
+  if (status !== "PENDING") {
+    throw badRequest("Редактировать можно только заявку на рассмотрении");
   }
 }
 

@@ -4,7 +4,7 @@ import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, forbidden, notFound } from "../http/errors.js";
 import { prisma } from "../lib/prisma.js";
-import { assertApplicationDecision, validateApplicationAnswers } from "../lib/application-policy.js";
+import { assertApplicationDecision, assertApplicationEditable, validateApplicationAnswers } from "../lib/application-policy.js";
 import { notifyApplicationDecision } from "../lib/notifications.js";
 import { asObject, jsonObjectField, optionalStringField, stringField } from "../utils/body.js";
 
@@ -65,25 +65,23 @@ applicationsRouter.post(
     }
 
     const now = new Date();
-    if (now < cohort.applicationStart || now > cohort.applicationEnd) {
+    if (cohort.completedAt || now < cohort.applicationStart || now > cohort.applicationEnd) {
       throw badRequest("Приём заявок в эту когорту закрыт");
     }
 
     validateApplicationAnswers(answers, cohort.surveyFields);
 
-    const application = await prisma.application.upsert({
-      where: {
-        userId_cohortId: {
-          userId: req.user!.id,
-          cohortId: cohort.id
-        }
-      },
-      update: {
-        answers: answersJson,
-        status: ApplicationStatus.PENDING,
-        reviewComment: null
-      },
-      create: {
+    const existingApplication = await prisma.application.findUnique({
+      where: { userId_cohortId: { userId: req.user!.id, cohortId: cohort.id } },
+      select: { id: true }
+    });
+
+    if (existingApplication) {
+      throw badRequest("Заявка в эту когорту уже существует");
+    }
+
+    const application = await prisma.application.create({
+      data: {
         userId: req.user!.id,
         cohortId: cohort.id,
         answers: answersJson
@@ -99,6 +97,63 @@ applicationsRouter.post(
     });
 
     res.status(201).json({ application });
+  })
+);
+
+applicationsRouter.patch(
+  "/applications/:applicationId",
+  asyncHandler(async (req, res) => {
+    if (req.user!.role !== UserRole.STUDENT) {
+      throw forbidden("Редактировать заявки могут только студенты");
+    }
+
+    const body = asObject(req.body);
+    const answers = jsonObjectField(body, "answers") as Record<string, unknown>;
+    const application = await prisma.application.findFirst({
+      where: { id: req.params.applicationId, userId: req.user!.id },
+      include: {
+        cohort: { include: { surveyFields: { orderBy: { order: "asc" } } } }
+      }
+    });
+
+    if (!application) {
+      throw notFound("Заявка не найдена");
+    }
+
+    if (application.cohort.completedAt) {
+      throw badRequest("Практика завершена, изменение заявки недоступно");
+    }
+
+    assertApplicationEditable(application.status);
+    validateApplicationAnswers(answers, application.cohort.surveyFields);
+
+    const result = await prisma.application.updateMany({
+      where: {
+        id: application.id,
+        userId: req.user!.id,
+        status: ApplicationStatus.PENDING
+      },
+      data: { answers: answers as Prisma.InputJsonObject }
+    });
+
+    if (result.count !== 1) {
+      throw badRequest("Статус заявки изменился. Обновите страницу и повторите попытку");
+    }
+
+    const updated = await prisma.application.findUniqueOrThrow({
+      where: { id: application.id },
+      include: {
+        cohort: {
+          include: {
+            surveyFields: { orderBy: { order: "asc" } },
+            testTask: true
+          }
+        },
+        role: true
+      }
+    });
+
+    res.json({ application: updated });
   })
 );
 
@@ -156,7 +211,9 @@ adminApplicationsRouter.patch(
       data: {
         status: status as ApplicationStatus,
         roleId: status === ApplicationStatus.APPROVED ? roleId : null,
-        reviewComment: status === ApplicationStatus.REJECTED ? reviewComment : null
+        reviewComment: status === ApplicationStatus.REJECTED || status === ApplicationStatus.REMOVED
+          ? reviewComment
+          : null
       },
       include: {
         user: { select: { id: true, email: true } },

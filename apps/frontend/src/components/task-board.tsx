@@ -99,7 +99,7 @@ export function TaskBoard({
       date: dateKey(card.date),
       participant,
       card,
-      readOnly: isAdmin || participant.userId !== currentUserId
+      readOnly: Boolean(board?.cohort.completedAt) || isAdmin || participant.userId !== currentUserId
     });
   }
 
@@ -142,7 +142,7 @@ export function TaskBoard({
       className={
         embedded
           ? "mt-4 border-t border-border pt-4"
-          : "rounded-lg border border-border bg-white p-5 shadow-panel"
+          : "rounded-lg border border-border bg-white p-4 shadow-panel sm:p-5"
       }
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -166,7 +166,7 @@ export function TaskBoard({
         ) : null}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-border py-3">
+      <div className="mt-4 grid gap-3 border-y border-border py-3 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <Button
             type="button"
@@ -182,10 +182,13 @@ export function TaskBoard({
           <Button
             type="button"
             variant="secondary"
+            className="h-10 w-10 p-0 sm:w-auto sm:px-4"
+            title="Текущая неделя"
+            aria-label="Текущая неделя"
             onClick={() => board && setSelectedWeek(defaultWeek(board.cohort.practiceStart, board.cohort.practiceEnd))}
           >
-            <CalendarDays className="mr-2 h-4 w-4" />
-            Текущая неделя
+            <CalendarDays className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Текущая неделя</span>
           </Button>
           <Button
             type="button"
@@ -199,7 +202,7 @@ export function TaskBoard({
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-sm font-medium">{days.length ? formatWeek(days) : "Нет рабочих дней"}</p>
+        <p className="text-center text-sm font-medium sm:text-left">{days.length ? formatWeek(days) : "Нет рабочих дней"}</p>
       </div>
 
       {error ? (
@@ -208,6 +211,11 @@ export function TaskBoard({
           <Button type="button" variant="secondary" onClick={loadBoard}>Повторить</Button>
         </div>
       ) : null}
+      {board?.cohort.completedAt ? (
+        <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-muted">
+          Практика завершена. Задачи доступны только для просмотра.
+        </p>
+      ) : null}
       {loading ? <p className="mt-4 text-sm text-muted">Загрузка задач...</p> : null}
 
       {!loading && board && board.participants.length === 0 ? (
@@ -215,7 +223,54 @@ export function TaskBoard({
       ) : null}
 
       {!loading && board && board.participants.length > 0 && days.length > 0 ? (
-        <div className="mt-4 overflow-x-auto rounded-md border border-border">
+        <div className="mt-4 grid gap-4 md:hidden">
+          {board.participants.map((participant) => {
+            const canEdit = !board.cohort.completedAt && !isAdmin && participant.userId === currentUserId;
+            return (
+              <section key={participant.userId} className="overflow-hidden rounded-md border border-border bg-white">
+                <div className="bg-slate-50 px-3 py-3">
+                  <p className="break-words text-sm font-semibold">{participant.displayName}</p>
+                  <p className="mt-1 text-xs text-muted">{participant.role?.name ?? "Роль не назначена"}</p>
+                </div>
+                {days.map((day) => {
+                  const cards = participant.cards.filter((card) => dateKey(card.date) === day);
+                  return (
+                    <div key={day} className="border-t border-border p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-muted">{weekdayLabel(day)}</p>
+                          <p className="mt-1 text-sm font-medium">{formatShortDate(day)}</p>
+                        </div>
+                        {canEdit ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            className="h-9 w-9 shrink-0 p-0"
+                            title={`Добавить задачу на ${formatShortDate(day)}`}
+                            aria-label={`Добавить задачу на ${formatShortDate(day)}`}
+                            onClick={() => openNewCard(participant, day)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {cards.map((card) => (
+                          <TaskCardItem key={card.id} card={card} onOpen={() => openExistingCard(participant, card)} />
+                        ))}
+                        {cards.length === 0 ? <p className="text-xs text-muted">Нет записей</p> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </section>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {!loading && board && board.participants.length > 0 && days.length > 0 ? (
+        <div className="mt-4 hidden overflow-x-auto rounded-md border border-border md:block">
           <div className="min-w-[920px]">
             <div className="grid bg-slate-50" style={{ gridTemplateColumns }}>
               <div className="p-3 text-xs font-semibold uppercase text-muted">Участник</div>
@@ -228,7 +283,7 @@ export function TaskBoard({
             </div>
 
             {board.participants.map((participant) => {
-              const canEdit = !isAdmin && participant.userId === currentUserId;
+              const canEdit = !board.cohort.completedAt && !isAdmin && participant.userId === currentUserId;
               return (
                 <div
                   key={participant.userId}
@@ -350,12 +405,12 @@ function TaskEditor({
   onSubmit: (event: React.FormEvent) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4" onMouseDown={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-editor-title"
-        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg border border-border bg-white p-5 shadow-2xl"
+        className="max-h-[94svh] w-full max-w-xl overflow-y-auto rounded-t-lg border border-border bg-white p-4 shadow-2xl sm:max-h-[90vh] sm:rounded-lg sm:p-5"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">

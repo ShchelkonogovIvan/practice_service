@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { SurveyFieldType } from "@prisma/client";
+import { ApplicationStatus, SurveyFieldType } from "@prisma/client";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, notFound } from "../http/errors.js";
 import { prisma } from "../lib/prisma.js";
 import { notifyTestTaskPublished } from "../lib/notifications.js";
+import { assertSurveyFieldChangesAllowed } from "../lib/survey-policy.js";
 import { asObject, dateField, optionalStringField, stringField } from "../utils/body.js";
 
 export const cohortsRouter = Router();
@@ -28,7 +29,8 @@ publicCohortsRouter.get(
     const cohorts = await prisma.cohort.findMany({
       where: {
         applicationStart: { lte: now },
-        applicationEnd: { gte: now }
+        applicationEnd: { gte: now },
+        completedAt: null
       },
       include: publicCohortInclude,
       orderBy: { applicationEnd: "asc" }
@@ -47,7 +49,8 @@ publicCohortsRouter.get(
       where: {
         id: req.params.cohortId,
         applicationStart: { lte: now },
-        applicationEnd: { gte: now }
+        applicationEnd: { gte: now },
+        completedAt: null
       },
       include: publicCohortInclude
     });
@@ -144,25 +147,62 @@ cohortsRouter.put(
     const surveyFields = parseSurveyFields(body.surveyFields);
 
     const cohort = await prisma.cohort.findUnique({
-      where: { id: req.params.cohortId }
+      where: { id: req.params.cohortId },
+      include: {
+        surveyFields: true,
+        _count: { select: { applications: true } }
+      }
     });
 
     if (!cohort) {
       throw notFound("Когорта не найдена");
     }
 
+    const retainedIds = surveyFields.flatMap((field) => field.id ? [field.id] : []);
+    assertSurveyFieldChangesAllowed(cohort.surveyFields, surveyFields, cohort._count.applications);
+
     const updated = await prisma.cohort.update({
       where: { id: cohort.id },
       data: {
         surveyFields: {
-          deleteMany: {},
-          create: surveyFields
+          deleteMany: { id: { notIn: retainedIds } },
+          update: surveyFields.filter((field) => field.id).map(({ id, ...field }) => ({
+            where: { id: id! },
+            data: field
+          })),
+          create: surveyFields.filter((field) => !field.id).map(({ id: _id, ...field }) => field)
         }
       },
       include: cohortInclude
     });
 
     res.json({ cohort: updated });
+  })
+);
+
+cohortsRouter.patch(
+  "/:cohortId/completion",
+  asyncHandler(async (req, res) => {
+    const body = asObject(req.body);
+    if (typeof body.completed !== "boolean") {
+      throw badRequest("Передайте признак завершения когорты");
+    }
+
+    const existing = await prisma.cohort.findUnique({
+      where: { id: req.params.cohortId },
+      select: { id: true }
+    });
+    if (!existing) {
+      throw notFound("Когорта не найдена");
+    }
+
+    const cohort = await prisma.cohort.update({
+      where: { id: req.params.cohortId },
+      data: { completedAt: body.completed ? new Date() : null },
+      include: cohortInclude
+    });
+
+    res.json({ cohort });
   })
 );
 
@@ -244,14 +284,22 @@ cohortsRouter.put(
     });
 
     let notification = null;
-    if (published && !cohort.testTask?.publishedAt) {
+    const shouldNotify = published && (
+      !cohort.testTask?.publishedAt || cohort.testTask.content !== content
+    );
+    if (shouldNotify) {
       const applications = await prisma.application.findMany({
-        where: { cohortId: cohort.id },
+        where: {
+          cohortId: cohort.id,
+          status: { in: [ApplicationStatus.PENDING, ApplicationStatus.APPROVED] }
+        },
         select: { user: { select: { email: true } } }
       });
       notification = await notifyTestTaskPublished(
         applications.map((application) => application.user.email),
-        cohort.name
+        cohort.name,
+        content,
+        Boolean(cohort.testTask?.publishedAt)
       );
     }
 
@@ -300,6 +348,7 @@ function parseSurveyFields(value: unknown) {
     }
 
     return {
+      id: typeof field.id === "string" && field.id.trim() ? field.id.trim() : undefined,
       label,
       type: type as SurveyFieldType,
       order: typeof field.order === "number" ? field.order : index,

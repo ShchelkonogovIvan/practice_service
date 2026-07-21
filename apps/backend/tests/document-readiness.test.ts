@@ -4,13 +4,15 @@ import { documentReadiness } from "../src/lib/document-readiness.js";
 
 const studentFields = {
   studentFio: "Иван Иванов",
+  studentFioGenitive: "Ивана Иванова",
   group: "РИ-13003",
   directionCode: "09.03.01",
   directionName: "Информатика и вычислительная техника",
   programName: "Программная инженерия",
   specialty: "Программная инженерия",
   practiceTopic: "Разработка сервиса практики",
-  mainStageTasks: "Разработка и тестирование"
+  mainStageTasks: "Разработка и тестирование",
+  supervisorUrfuName: "Корнякова Елена Михайловна"
 };
 
 const reviewFields = {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, LayoutDashboard, ListChecks, LogOut, Plus, Search, Settings, Trash2, UserRound } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, LayoutDashboard, ListChecks, LogOut, Plus, RotateCcw, Search, Settings, Trash2, UserMinus, UserRound } from "lucide-react";
 import {
   AdminApplication,
   ApiError,
@@ -10,18 +10,23 @@ import {
   AuthUser,
   Cohort,
   activeCohort,
+  clearApplicationDraft,
   clearToken,
   createCohort,
   currentUser,
+  getApplicationDraft,
   getTaskBoard,
   listAdminDocuments,
   listCohortApplications,
   listCohorts,
   myApplications,
+  saveApplicationDraft,
+  setCohortCompletion,
   submitApplication,
   updateCohortRoles,
   updateCohortSurvey,
   updateApplicationStatus,
+  updateMyApplication,
   updateTestTask
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -101,7 +106,10 @@ export function DashboardShell() {
     ?? approvedApplications[0];
   const editableCohorts = isAdmin
     ? []
-    : activeCohorts.filter((item) => applicationForCohort(applications, item.id)?.status !== "APPROVED");
+    : uniqueCohorts([
+        ...activeCohorts.filter((item) => !applicationForCohort(applications, item.id)),
+        ...applications.filter((application) => application.status === "PENDING").map((application) => application.cohort)
+      ]);
   useEffect(() => {
     loadDashboard();
   }, []);
@@ -126,7 +134,17 @@ export function DashboardShell() {
       setUser(userResult.user);
       setApplications(applicationResult.applications);
       setActiveCohorts(cohortResult.cohorts ?? (cohortResult.cohort ? [cohortResult.cohort] : []));
-      setAnswersByCohort(buildInitialAnswersByCohort(cohortResult.cohorts ?? [], applicationResult.applications));
+      const answerCohorts = uniqueCohorts([
+        ...(cohortResult.cohorts ?? []),
+        ...applicationResult.applications.map((application) => application.cohort)
+      ]);
+      const initialAnswers = buildInitialAnswersByCohort(answerCohorts, applicationResult.applications);
+      setAnswersByCohort(Object.fromEntries(
+        answerCohorts.map((cohort) => [
+          cohort.id,
+          { ...(initialAnswers[cohort.id] ?? {}), ...getApplicationDraft(cohort.id) }
+        ])
+      ));
 
       if (userResult.user.role === "ADMIN") {
         const cohortList = await listCohorts();
@@ -199,8 +217,14 @@ export function DashboardShell() {
     setMessage(null);
 
     try {
-      await submitApplication(cohort.id, answers);
+      if (activeApplication) {
+        await updateMyApplication(activeApplication.id, answers);
+      } else {
+        await submitApplication(cohort.id, answers);
+      }
+      clearApplicationDraft(cohort.id);
       setMessage(activeApplication ? "Заявка обновлена" : "Заявка отправлена");
+      setExpandedCohortId(null);
       await loadDashboard();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не получилось отправить заявку");
@@ -209,8 +233,16 @@ export function DashboardShell() {
     }
   }
 
+  function onApplicationAnswerChange(cohortId: string, fieldId: string, value: string) {
+    setAnswersByCohort((current) => {
+      const answers = { ...(current[cohortId] ?? {}), [fieldId]: value };
+      saveApplicationDraft(cohortId, answers);
+      return { ...current, [cohortId]: answers };
+    });
+  }
+
   return (
-    <main className="mx-auto min-h-screen w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
+    <main className="mx-auto min-h-screen w-full max-w-7xl px-3 py-4 sm:px-6 sm:py-6">
       <header className="mb-6 flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-4">
           <OverviewLink />
@@ -218,9 +250,9 @@ export function DashboardShell() {
             <p className="text-sm text-muted">Личный кабинет</p>
           </div>
         </div>
-        <Button variant="secondary" onClick={logout}>
-          <LogOut className="mr-2 h-4 w-4" />
-          Выйти
+        <Button className="w-10 px-0 sm:w-auto sm:px-4" variant="secondary" onClick={logout} title="Выйти" aria-label="Выйти">
+          <LogOut className="h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Выйти</span>
         </Button>
       </header>
 
@@ -288,18 +320,18 @@ export function DashboardShell() {
                         setMessage(null);
                         setExpandedCohortId((current) => (current === cohortId ? null : cohortId));
                       }}
-                      onAnswerChange={(cohortId, fieldId, value) =>
-                        setAnswersByCohort((current) => ({
-                          ...current,
-                          [cohortId]: {
-                            ...(current[cohortId] ?? {}),
-                            [fieldId]: value
-                          }
-                        }))
-                      }
+                      onAnswerChange={onApplicationAnswerChange}
                       onSubmit={onApplyToCohort}
                     />
-                    <StudentApplications applications={applications} />
+                    <StudentApplications
+                      applications={applications}
+                      onEdit={(application) => {
+                        setExpandedCohortId(application.cohort.id);
+                        window.requestAnimationFrame(() => {
+                          document.getElementById(`application-form-${application.cohort.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                        });
+                      }}
+                    />
                   </div>
                 ) : null}
 
@@ -396,8 +428,8 @@ function StudentSectionHeader({ active }: { active: StudentTab }) {
 
 function ProfileCard({ user }: { user: AuthUser | null }) {
   return (
-    <Card className="p-5">
-      <div className="flex items-center gap-3">
+    <Card className="p-4 sm:p-5">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-primarySoft text-primary">
           <UserRound className="h-5 w-5" />
         </div>
@@ -408,7 +440,7 @@ function ProfileCard({ user }: { user: AuthUser | null }) {
           </p>
         </div>
         {user ? (
-          <span className="ml-auto rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-muted">
+          <span className="ml-auto shrink-0 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-muted">
             {user.role === "ADMIN" ? "Администратор" : "Студент"}
           </span>
         ) : null}
@@ -489,6 +521,7 @@ function ApplicationFormCard({
             return (
               <form
                 key={cohort.id}
+                id={`application-form-${cohort.id}`}
                 className="grid gap-4 rounded-md border border-border bg-white p-4"
                 onSubmit={(event) => onSubmit(event, cohort)}
               >
@@ -525,6 +558,8 @@ function ApplicationFormCard({
                     )}
 
                     <InlineFeedback error={actionError} message={actionMessage} />
+
+                    <p className="text-xs text-muted">Черновик сохраняется автоматически.</p>
 
                     <Button type="submit" disabled={applying || cohort.surveyFields.length === 0}>
                       {applying ? "Сохраняем..." : application ? "Обновить заявку" : "Отправить заявку"}
@@ -592,7 +627,7 @@ function SurveyFieldControl({
   );
 }
 
-function StudentApplications({ applications }: { applications: Application[] }) {
+function StudentApplications({ applications, onEdit }: { applications: Application[]; onEdit: (application: Application) => void }) {
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold">Мои заявки</h2>
@@ -607,6 +642,9 @@ function StudentApplications({ applications }: { applications: Application[] }) 
                   <p className="font-medium">{application.cohort.name}</p>
                   <p className="mt-1 text-sm text-muted">
                     Подана: {formatDate(application.createdAt)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    Обновлена: {formatDateTime(application.updatedAt)}
                   </p>
                   {application.role ? (
                     <p className="mt-1 text-sm text-muted">Роль: {application.role.name}</p>
@@ -629,6 +667,11 @@ function StudentApplications({ applications }: { applications: Application[] }) 
                   {statusLabel(application.status)}
                 </span>
               </div>
+              {application.status === "PENDING" ? (
+                <Button type="button" variant="secondary" className="mt-3" onClick={() => onEdit(application)}>
+                  Изменить заявку
+                </Button>
+              ) : null}
             </div>
           ))
         )}
@@ -680,32 +723,7 @@ function AdminCohorts({
 
   return (
     <div className="grid gap-4">
-      <Card className="p-5">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <label className="grid min-w-60 flex-1 gap-2 text-sm font-medium">
-            Рабочая когорта
-            <select
-              className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-              value={selectedCohort?.id ?? ""}
-              disabled={cohorts.length === 0}
-              onChange={(event) => setSelectedCohortId(event.target.value)}
-            >
-              {cohorts.length === 0 ? <option value="">Когорт пока нет</option> : null}
-              {cohorts.map((cohort) => (
-                <option key={cohort.id} value={cohort.id}>
-                  {cohort.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button type="button" variant="secondary" onClick={() => setShowCreateForm((current) => !current)}>
-            <Plus className="mr-2 h-4 w-4" />
-            {showCreateForm ? "Скрыть форму" : "Новая когорта"}
-          </Button>
-        </div>
-      </Card>
-
-      {showCreateForm ? <Card className="p-5">
+      {showCreateForm ? <Card className="order-2 p-5">
         <h2 className="text-lg font-semibold">Новая когорта</h2>
         <form className="mt-4 grid gap-4" onSubmit={onCreateCohort}>
           {copySource ? (
@@ -789,15 +807,47 @@ function AdminCohorts({
       </Card> : null}
 
       {selectedCohort ? (
-        <CohortRow key={selectedCohort.id} cohort={selectedCohort} onSaved={onCohortChange} />
+        <CohortRow
+          key={selectedCohort.id}
+          cohort={selectedCohort}
+          cohorts={cohorts}
+          selectedCohortId={selectedCohort.id}
+          showCreateForm={showCreateForm}
+          onSelectCohort={setSelectedCohortId}
+          onToggleCreate={() => setShowCreateForm((current) => !current)}
+          onSaved={onCohortChange}
+        />
       ) : (
-        <UnavailableSection text="Создайте первую когорту, чтобы открыть рабочие разделы." />
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-5">
+          <p className="text-sm text-muted">Создайте первую когорту, чтобы открыть рабочие разделы.</p>
+          {!showCreateForm ? (
+            <Button type="button" onClick={() => setShowCreateForm(true)}>
+              <Plus className="mr-2 h-4 w-4" />Новая когорта
+            </Button>
+          ) : null}
+        </Card>
       )}
     </div>
   );
 }
 
-function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise<void> }) {
+function CohortRow({
+  cohort,
+  cohorts,
+  selectedCohortId,
+  showCreateForm,
+  onSelectCohort,
+  onToggleCreate,
+  onSaved
+}: {
+  cohort: Cohort;
+  cohorts: Cohort[];
+  selectedCohortId: string;
+  showCreateForm: boolean;
+  onSelectCohort: (cohortId: string) => void;
+  onToggleCreate: () => void;
+  onSaved: () => Promise<void>;
+}) {
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [surveyFields, setSurveyFields] = useState(surveyDraftsFromCohort(cohort));
   const [roleNames, setRoleNames] = useState(cohort.roles.map((role) => role.name));
@@ -809,6 +859,24 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [taskError, setTaskError] = useState<string | null>(null);
+  const [taskMessage, setTaskMessage] = useState<string | null>(null);
+  const [changingCompletion, setChangingCompletion] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
+
+  async function toggleCompletion() {
+    const completed = !cohort.completedAt;
+    if (completed && !window.confirm("Завершить практику? Участники больше не смогут изменять задачи.")) return;
+    setChangingCompletion(true);
+    setCompletionError(null);
+    try {
+      await setCohortCompletion(cohort.id, completed);
+      await onSaved();
+    } catch (caught) {
+      setCompletionError(caught instanceof Error ? caught.message : "Не получилось изменить статус когорты");
+    } finally {
+      setChangingCompletion(false);
+    }
+  }
 
   function addRole() {
     const roleName = newRole.trim();
@@ -844,9 +912,21 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
   async function onSaveTask() {
     setSavingTask(true);
     setTaskError(null);
+    setTaskMessage(null);
 
     try {
-      await updateTestTask(cohort.id, content, published);
+      const result = await updateTestTask(cohort.id, content, published);
+      if (!result.notification) {
+        setTaskMessage("Тестовое задание сохранено");
+      } else if (result.notification.recipients === 0) {
+        setTaskMessage("Тестовое задание опубликовано. Получателей пока нет");
+      } else if (result.notification.sent === result.notification.recipients) {
+        setTaskMessage(`Тестовое задание отправлено на почту: ${result.notification.sent}`);
+      } else if (!result.notification.configured) {
+        setTaskError("Тестовое задание опубликовано, но SMTP не настроен и письма не отправлены");
+      } else {
+        setTaskError(`Тестовое задание опубликовано, но отправлено писем: ${result.notification.sent} из ${result.notification.recipients}`);
+      }
       await onSaved();
     } catch (caught) {
       setTaskError(caught instanceof Error ? caught.message : "Не получилось сохранить тестовое задание");
@@ -856,34 +936,54 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
   }
 
   return (
-    <section className="grid gap-4">
-      <Card className="p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-muted">Активная когорта</p>
-            <h2 className="mt-1 text-xl font-semibold">{cohort.name}</h2>
-            <p className="mt-2 text-sm text-muted">
-              Анкета: {cohort.surveyFields.length} · Роли: {cohort.roles.length}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+    <section className="order-1 grid gap-4">
+      <Card className="p-4 sm:p-5">
+        <div className="grid gap-3 sm:flex sm:flex-wrap sm:items-end sm:justify-between">
+          <label className="grid min-w-60 flex-1 gap-2 text-sm font-medium md:max-w-xl">
+            Рабочая когорта
+            <select
+              className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+              value={selectedCohortId}
+              onChange={(event) => onSelectCohort(event.target.value)}
+            >
+              {cohorts.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}{item.completedAt ? " (завершена)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button className="w-full sm:w-auto" type="button" variant="secondary" onClick={onToggleCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            {showCreateForm ? "Закрыть создание" : "Новая когорта"}
+          </Button>
+        </div>
+
+        <div className="mt-4 grid gap-3 border-t border-border pt-4 lg:flex lg:flex-wrap lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted">
             <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
-              {cohort.testTask?.publishedAt ? "ТЗ опубликовано" : "ТЗ не опубликовано"}
+              {cohort.completedAt ? "Практика завершена" : cohort.testTask?.publishedAt ? "ТЗ опубликовано" : "ТЗ не опубликовано"}
             </span>
-            <Button asChild type="button" variant="secondary">
+            <span>{cohort.surveyFields.length} полей анкеты · {cohort.roles.length} ролей</span>
+            <span>Заявки: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}</span>
+            <span>Практика: {formatDate(cohort.practiceStart)} - {formatDate(cohort.practiceEnd)}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <Button className="w-full sm:w-auto" type="button" variant="secondary" disabled={changingCompletion} onClick={toggleCompletion}>
+              {cohort.completedAt ? <RotateCcw className="mr-2 h-4 w-4" /> : <Archive className="mr-2 h-4 w-4" />}
+              {cohort.completedAt ? "Возобновить" : "Завершить"}
+            </Button>
+            <Button className="w-full sm:w-auto" asChild type="button" variant="secondary">
               <a href={`/apply/${cohort.id}`} target="_blank" rel="noreferrer">
                 <ExternalLink className="mr-2 h-4 w-4" />Публичная анкета
               </a>
             </Button>
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
-          <p>Прием заявок: {formatDate(cohort.applicationStart)} - {formatDate(cohort.applicationEnd)}</p>
-          <p>Практика: {formatDate(cohort.practiceStart)} - {formatDate(cohort.practiceEnd)}</p>
-        </div>
+        {completionError ? <p className="mt-3 text-sm text-red-700" role="alert">{completionError}</p> : null}
       </Card>
 
-      <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      {!showCreateForm ? <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <DashboardTabs
           active={activeTab}
           variant="sidebar"
@@ -969,6 +1069,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
                 Опубликовать тестовое задание
               </label>
               {taskError ? <p className="text-sm text-red-700">{taskError}</p> : null}
+              {taskMessage ? <p className="text-sm text-green-700">{taskMessage}</p> : null}
               <Button type="button" disabled={savingTask || !content.trim()} onClick={onSaveTask}>
                 {savingTask ? "Сохраняем..." : "Сохранить тестовое задание"}
               </Button>
@@ -977,7 +1078,7 @@ function CohortRow({ cohort, onSaved }: { cohort: Cohort; onSaved: () => Promise
         </Card>
           ) : null}
         </div>
-      </div>
+      </div> : null}
     </section>
   );
 }
@@ -1166,7 +1267,7 @@ function DashboardTabs({
           <p className="text-sm font-semibold">Разделы когорты</p>
         </div>
       ) : null}
-      <div className={sidebar ? "grid grid-cols-3 p-1.5 lg:flex lg:flex-col" : "flex min-w-max gap-1"}>
+      <div className={sidebar ? "grid grid-cols-5 p-1.5 lg:flex lg:flex-col" : "flex min-w-max gap-1"}>
         {items.map((item) => {
           const Icon = item.icon;
           const selected = active === item.id;
@@ -1190,7 +1291,7 @@ function DashboardTabs({
               onClick={() => onChange(item.id)}
             >
               <Icon className="h-4 w-4" />
-              <span className="max-w-full truncate">{item.label}</span>
+              <span className="whitespace-nowrap text-[10px] sm:text-xs lg:text-sm">{item.label}</span>
             </button>
           );
         })}
@@ -1274,6 +1375,11 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
     await changeStatus(application, "REJECTED", undefined, reviewComment);
   }
 
+  async function removeParticipant(application: AdminApplication) {
+    if (!window.confirm("Исключить участника из когорты? История заявки сохранится.")) return;
+    await changeStatus(application, "REMOVED", undefined, "Исключён из когорты администратором");
+  }
+
   async function changeStatus(
     application: AdminApplication,
     status: Application["status"],
@@ -1291,7 +1397,7 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
         roleId,
         reviewComment
       });
-      setMessage(status === "APPROVED" ? "Заявка одобрена" : "Заявка отклонена");
+      setMessage(status === "APPROVED" ? "Заявка одобрена" : status === "REMOVED" ? "Участник исключён из когорты" : "Заявка отклонена");
       setExpandedApplicationId(null);
       await loadApplications();
     } catch (caught) {
@@ -1334,6 +1440,7 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
             <option value="PENDING">На рассмотрении</option>
             <option value="APPROVED">Одобрена</option>
             <option value="REJECTED">Отклонена</option>
+            <option value="REMOVED">Исключена</option>
           </select>
         </div>
       </div>
@@ -1438,6 +1545,11 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
                     Отклонить
                   </Button>
                 </div>
+                {application.status === "APPROVED" ? (
+                  <Button type="button" variant="secondary" disabled={isSaving} onClick={() => removeParticipant(application)}>
+                    <UserMinus className="mr-2 h-4 w-4" />Исключить из когорты
+                  </Button>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -1615,6 +1727,7 @@ function serializeSurveyFields(fields: SurveyFieldDraft[]) {
         throw new Error(`Добавьте варианты ответа для поля «${field.label.trim()}»`);
       }
       return {
+        ...(field.key.startsWith("draft-") ? {} : { id: field.key }),
         label: field.label.trim(),
         type: field.type,
         options,
@@ -1665,6 +1778,10 @@ function applicationForCohort(applications: Application[], cohortId: string) {
   return applications.find((application) => application.cohort.id === cohortId);
 }
 
+function uniqueCohorts(cohorts: Cohort[]) {
+  return [...new Map(cohorts.map((cohort) => [cohort.id, cohort])).values()];
+}
+
 function normalizeAnswers(value: Record<string, unknown>): Answers {
   return Object.fromEntries(
     Object.entries(value)
@@ -1703,7 +1820,8 @@ function statusLabel(status: Application["status"]) {
   const labels = {
     PENDING: "На рассмотрении",
     APPROVED: "Одобрена",
-    REJECTED: "Отклонена"
+    REJECTED: "Отклонена",
+    REMOVED: "Исключена"
   };
 
   return labels[status];
@@ -1711,4 +1829,8 @@ function statusLabel(status: Application["status"]) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU").format(new Date(value));
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
 }

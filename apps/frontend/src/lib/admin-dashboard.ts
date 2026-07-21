@@ -50,7 +50,7 @@ export function buildAdminOverview(
 export function studentDocumentFieldsReadiness(data: StudentDocumentData | null) {
   const filled = (value: string | null | undefined) => Boolean(value?.trim());
   return {
-    individual: Boolean(data && [data.studentFio, data.group, data.directionCode, data.directionName, data.programName, data.practiceTopic, data.mainStageTasks].every(filled)),
+    individual: Boolean(data && [data.studentFioGenitive, data.group, data.directionCode, data.directionName, data.programName, data.practiceTopic, data.mainStageTasks, data.supervisorUrfuName].every(filled)),
     review: Boolean(data && [data.studentFio, data.group].every(filled)),
     title: Boolean(data && [data.studentFio, data.group, data.specialty, data.practiceTopic].every(filled))
   };

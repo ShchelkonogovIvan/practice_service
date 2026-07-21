@@ -12,6 +12,7 @@ import { badRequest, forbidden, notFound } from "../http/errors.js";
 import { requireApprovedApplication } from "../lib/cohort-access.js";
 import { generatePracticeDocument, PracticeDocumentKind } from "../lib/document-generator.js";
 import { documentReadiness, writableReviewFields, writableStudentFields } from "../lib/document-readiness.js";
+import { formatShortFio } from "../lib/document-names.js";
 import { notifyReportReview } from "../lib/notifications.js";
 import { assertValidReportFile } from "../lib/report-file.js";
 import { prisma } from "../lib/prisma.js";
@@ -154,7 +155,7 @@ documentsRouter.get(
     const kind = parseDocumentKind(req.params.kind);
     assertCanGenerate(kind, data);
 
-    const buffer = generatePracticeDocument(kind, templateData(data!, application.cohort));
+    const buffer = generatePracticeDocument(kind, templateData(kind, data!, application.cohort));
     const filename = documentFilename(kind);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.setHeader(
@@ -386,11 +387,14 @@ function assertCanGenerate(kind: PracticeDocumentKind, data: Record<string, unkn
 }
 
 function templateData(
+  kind: PracticeDocumentKind,
   data: NonNullable<Awaited<ReturnType<typeof findDocumentData>>>,
   cohort: { practiceStart: Date; practiceEnd: Date }
 ) {
   return {
-    student_fio: data.studentFio ?? "",
+    student_fio: kind === "individual-assignment"
+      ? data.studentFioGenitive ?? ""
+      : formatShortFio(data.studentFio),
     group: data.group ?? "",
     direction_code: data.directionCode ?? "",
     direction_name: data.directionName ?? "",
@@ -398,7 +402,7 @@ function templateData(
     specialty: data.specialty ?? "",
     practice_topic: data.practiceTopic ?? "",
     main_stage_tasks: data.mainStageTasks ?? "",
-    supervisor_urfu_name: "Корнякова Елена Михайловна",
+    supervisor_urfu_name: data.supervisorUrfuName ?? "",
     review_activities: data.reviewActivities ?? "",
     review_characteristic: data.reviewCharacteristic ?? "",
     review_employed: data.reviewEmployed ?? "",
