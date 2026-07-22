@@ -7,10 +7,15 @@
     "dev": "pnpm --parallel --filter @practice/backend --filter @practice/frontend dev",
     "build": "pnpm --recursive build",
     "test": "pnpm --recursive test",
+    "test:integration": "pnpm --filter @practice/backend test:integration",
+    "test:all": "pnpm test && pnpm test:integration",
+    "verify": "pnpm prisma:generate && pnpm test && pnpm typecheck && pnpm build",
+    "verify:full": "pnpm prisma:deploy && pnpm verify && pnpm test:integration",
     "lint": "pnpm --recursive lint",
     "typecheck": "pnpm --recursive typecheck",
     "prisma:generate": "pnpm --filter @practice/backend prisma:generate",
     "prisma:migrate": "pnpm --filter @practice/backend prisma:migrate",
+    "prisma:deploy": "pnpm --filter @practice/backend prisma:deploy",
     "seed": "pnpm --filter @practice/backend seed"
   }
 }

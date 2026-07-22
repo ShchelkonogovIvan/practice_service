@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prisma:generate": "tsx scripts/run-with-root-env.ts prisma generate",
     "prisma:migrate": "tsx scripts/run-with-root-env.ts prisma migrate dev --name init",
+    "prisma:deploy": "tsx scripts/run-with-root-env.ts prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
     "admin:create": "tsx src/scripts/create-admin.ts"
   },

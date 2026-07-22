@@ -38,6 +38,12 @@ pnpm.cmd seed
 pnpm.cmd dev
 ```
 
+Полная локальная проверка после запуска PostgreSQL:
+
+```powershell
+pnpm.cmd verify:full
+```
+
 После запуска:
 
 - сайт: http://localhost:3000
