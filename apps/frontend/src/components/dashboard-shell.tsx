@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, ArrowDown, ArrowUp, ClipboardList, ExternalLink, FileText, LayoutDashboard, ListChecks, LogOut, Plus, RotateCcw, Search, Settings, Trash2, UserMinus, UserRound } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, ClipboardList, Download, ExternalLink, FileText, LayoutDashboard, ListChecks, LogOut, Plus, RotateCcw, Search, Settings, Trash2, UserMinus, UserRound } from "lucide-react";
 import {
   AdminApplication,
   ApiError,
@@ -15,6 +15,7 @@ import {
   clearToken,
   createCohort,
   currentUser,
+  downloadApiFile,
   getApplicationDraft,
   getTaskBoard,
   listAdminDocuments,
@@ -921,6 +922,20 @@ function CohortRow({
   const [taskMessage, setTaskMessage] = useState<string | null>(null);
   const [changingCompletion, setChangingCompletion] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  async function exportCohort() {
+    setExporting(true);
+    setExportError(null);
+    try {
+      await downloadApiFile(`/admin/cohorts/${cohort.id}/export.csv`, `Когорта ${cohort.name}.csv`);
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : "Не удалось выгрузить данные когорты");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   async function toggleCompletion() {
     const completed = !cohort.completedAt;
@@ -1028,6 +1043,10 @@ function CohortRow({
             <span>Практика: {formatDate(cohort.practiceStart)} - {formatDate(cohort.practiceEnd)}</span>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <Button className="col-span-2 w-full sm:col-auto sm:w-auto" type="button" variant="secondary" disabled={exporting} onClick={exportCohort}>
+              <Download className="mr-2 h-4 w-4" />
+              {exporting ? "Готовим..." : "Экспорт CSV"}
+            </Button>
             <Button className="w-full sm:w-auto" type="button" variant="secondary" disabled={changingCompletion} onClick={toggleCompletion}>
               {cohort.completedAt ? <RotateCcw className="mr-2 h-4 w-4" /> : <Archive className="mr-2 h-4 w-4" />}
               {cohort.completedAt ? "Возобновить" : "Завершить"}
@@ -1040,6 +1059,7 @@ function CohortRow({
           </div>
         </div>
         {completionError ? <p className="mt-3 text-sm text-red-700" role="alert">{completionError}</p> : null}
+        {exportError ? <p className="mt-3 text-sm text-red-700" role="alert">{exportError}</p> : null}
       </Card>
 
       {!showCreateForm ? <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">

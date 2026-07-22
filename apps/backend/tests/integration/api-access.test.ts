@@ -56,6 +56,7 @@ test("API enforces cohort access, file validation and report review workflow", a
   assert.equal((await request(baseUrl, `/cohorts/${cohort.id}/documents/me`)).status, 401);
   assert.equal((await request(baseUrl, `/cohorts/${cohort.id}/documents/me`, tokens.pending)).status, 403);
   assert.equal((await request(baseUrl, `/admin/cohorts/${cohort.id}/documents`, tokens.owner)).status, 403);
+  assert.equal((await request(baseUrl, `/admin/cohorts/${cohort.id}/export.csv`, tokens.owner)).status, 403);
   assert.equal((await request(baseUrl, `/tasks/${card.id}`, tokens.other, { method: "PATCH", body: JSON.stringify({ title: "Changed" }) })).status, 403);
 
   const firstPublication = await request(baseUrl, `/cohorts/${cohort.id}/test-task`, tokens.admin, {
@@ -115,6 +116,16 @@ test("API enforces cohort access, file validation and report review workflow", a
   uploadedPath = path.resolve(env.uploadsDir, uploaded.data.reportFileUrl);
   const adminAfterReport = await request(baseUrl, "/notifications", tokens.admin);
   assert.ok((await adminAfterReport.json() as NotificationListResponse).notifications.some((item) => item.type === "REPORT_UPLOADED"));
+
+  const cohortExport = await request(baseUrl, `/admin/cohorts/${cohort.id}/export.csv`, tokens.admin);
+  assert.equal(cohortExport.status, 200);
+  assert.match(cohortExport.headers.get("content-type") ?? "", /text\/csv/);
+  assert.match(cohortExport.headers.get("content-disposition") ?? "", /cohort-export\.csv/);
+  const cohortBytes = new Uint8Array(await cohortExport.arrayBuffer());
+  assert.deepEqual([...cohortBytes.slice(0, 3)], [0xef, 0xbb, 0xbf]);
+  const cohortCsv = new TextDecoder().decode(cohortBytes);
+  assert.ok(cohortCsv.includes(owner.email));
+  assert.ok(cohortCsv.includes("report.pdf"));
 
   const missingComment = await request(baseUrl, `/admin/cohorts/${cohort.id}/documents/${owner.id}/report-review`, tokens.admin, {
     method: "PATCH",

@@ -8,6 +8,7 @@ import { assertApplicationDecision, assertApplicationEditable, validateApplicati
 import { notifyApplicationDecision } from "../lib/notifications.js";
 import { createAdminNotifications, createUserNotification } from "../lib/in-app-notifications.js";
 import { applicationDecisionContent, applicationSubmittedContent } from "../lib/notification-content.js";
+import { buildCohortCsv } from "../lib/cohort-export.js";
 import { asObject, jsonObjectField, optionalStringField, stringField } from "../utils/body.js";
 
 export const applicationsRouter = Router();
@@ -162,6 +163,40 @@ applicationsRouter.patch(
 );
 
 adminApplicationsRouter.use(requireAuth, requireAdmin);
+
+adminApplicationsRouter.get(
+  "/cohorts/:cohortId/export.csv",
+  asyncHandler(async (req, res) => {
+    const cohort = await prisma.cohort.findUnique({
+      where: { id: req.params.cohortId },
+      include: {
+        surveyFields: { orderBy: { order: "asc" } },
+        applications: {
+          include: {
+            user: { select: { id: true, email: true } },
+            role: true
+          },
+          orderBy: { createdAt: "asc" }
+        },
+        documents: true,
+        taskCards: { select: { userId: true, doneText: true } }
+      }
+    });
+
+    if (!cohort) {
+      throw notFound("Когорта не найдена");
+    }
+
+    const csv = buildCohortCsv(cohort.surveyFields, cohort.applications, cohort.documents, cohort.taskCards);
+    const fileName = `Когорта ${cohort.name}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="cohort-export.csv"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+    res.send(csv);
+  })
+);
 
 adminApplicationsRouter.get(
   "/cohorts/:cohortId/applications",
