@@ -5,6 +5,8 @@ import { requireAdmin, requireAuth } from "../middleware/auth.js";
 import { badRequest, notFound } from "../http/errors.js";
 import { prisma } from "../lib/prisma.js";
 import { notifyTestTaskPublished } from "../lib/notifications.js";
+import { createUserNotifications } from "../lib/in-app-notifications.js";
+import { testTaskContent as buildTestTaskNotification } from "../lib/notification-content.js";
 import { assertSurveyFieldChangesAllowed } from "../lib/survey-policy.js";
 import { asObject, dateField, optionalStringField, stringField } from "../utils/body.js";
 
@@ -293,13 +295,18 @@ cohortsRouter.put(
           cohortId: cohort.id,
           status: { in: [ApplicationStatus.PENDING, ApplicationStatus.APPROVED] }
         },
-        select: { user: { select: { email: true } } }
+        select: { user: { select: { id: true, email: true } } }
       });
+      const updated = Boolean(cohort.testTask?.publishedAt);
+      await createUserNotifications(
+        applications.map((application) => application.user.id),
+        buildTestTaskNotification(cohort.name, updated)
+      ).catch(() => undefined);
       notification = await notifyTestTaskPublished(
         applications.map((application) => application.user.email),
         cohort.name,
         content,
-        Boolean(cohort.testTask?.publishedAt)
+        updated
       );
     }
 

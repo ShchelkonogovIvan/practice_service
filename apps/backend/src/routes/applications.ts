@@ -6,6 +6,8 @@ import { badRequest, forbidden, notFound } from "../http/errors.js";
 import { prisma } from "../lib/prisma.js";
 import { assertApplicationDecision, assertApplicationEditable, validateApplicationAnswers } from "../lib/application-policy.js";
 import { notifyApplicationDecision } from "../lib/notifications.js";
+import { createAdminNotifications, createUserNotification } from "../lib/in-app-notifications.js";
+import { applicationDecisionContent, applicationSubmittedContent } from "../lib/notification-content.js";
 import { asObject, jsonObjectField, optionalStringField, stringField } from "../utils/body.js";
 
 export const applicationsRouter = Router();
@@ -95,6 +97,8 @@ applicationsRouter.post(
         role: true
       }
     });
+
+    await createAdminNotifications(applicationSubmittedContent(cohort.name, req.user!.email)).catch(() => undefined);
 
     res.status(201).json({ application });
   })
@@ -228,6 +232,10 @@ adminApplicationsRouter.patch(
       updated.status,
       updated.reviewComment
     );
+    await createUserNotification(
+      updated.user.id,
+      applicationDecisionContent(updated.cohort.name, updated.status, updated.reviewComment)
+    ).catch(() => undefined);
 
     res.json({ application: updated, notification });
   })

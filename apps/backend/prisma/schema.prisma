@@ -31,6 +31,20 @@ enum ReportReviewStatus {
   CHANGES_REQUESTED
 }
 
+enum NotificationType {
+  APPLICATION_DECISION
+  APPLICATION_SUBMITTED
+  TEST_TASK
+  REPORT_REVIEW
+  REPORT_UPLOADED
+}
+
+enum NotificationSection {
+  APPLICATIONS
+  DOCUMENTS
+  TASKS
+}
+
 model User {
   id           String                @id @default(cuid())
   email        String                @unique
@@ -41,8 +55,25 @@ model User {
   applications Application[]
   documents    StudentDocumentData[]
   taskCards    TaskCard[]
+  notifications Notification[]
 
   @@map("users")
+}
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String              @map("user_id")
+  type      NotificationType
+  section   NotificationSection
+  title     String
+  message   String
+  readAt    DateTime?           @map("read_at")
+  createdAt DateTime            @default(now()) @map("created_at")
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("notifications")
 }
 
 model Cohort {

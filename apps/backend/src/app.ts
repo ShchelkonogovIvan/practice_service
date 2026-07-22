@@ -9,6 +9,7 @@ import { cohortsRouter, publicCohortsRouter } from "./routes/cohorts.js";
 import { adminDocumentsRouter, documentsRouter } from "./routes/documents.js";
 import { healthRouter } from "./routes/health.js";
 import { tasksRouter } from "./routes/tasks.js";
+import { notificationsRouter } from "./routes/notifications.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 
 export function createApp() {
@@ -31,6 +32,7 @@ export function createApp() {
   app.use("/api", documentsRouter);
   app.use("/api/admin", adminDocumentsRouter);
   app.use("/api", tasksRouter);
+  app.use("/api", notificationsRouter);
   app.use("/api/cohorts", cohortsRouter);
 
   app.use(notFoundHandler);

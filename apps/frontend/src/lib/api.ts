@@ -107,6 +107,17 @@ export type EmailNotificationResult = {
   configured: boolean;
 };
 
+export type InAppNotification = {
+  id: string;
+  userId: string;
+  type: "APPLICATION_DECISION" | "APPLICATION_SUBMITTED" | "TEST_TASK" | "REPORT_REVIEW" | "REPORT_UPLOADED";
+  section: "APPLICATIONS" | "DOCUMENTS" | "TASKS";
+  title: string;
+  message: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
 export type AdminDocumentRow = {
   applicationId: string;
   user: { id: string; email: string };
@@ -248,6 +259,20 @@ export async function currentUser() {
 
 export async function myApplications() {
   return api<{ applications: Application[] }>("/me/applications");
+}
+
+export async function listNotifications() {
+  return api<{ notifications: InAppNotification[]; unreadCount: number }>("/notifications");
+}
+
+export async function markNotificationRead(notificationId: string) {
+  return api<{ notification: InAppNotification }>(`/notifications/${notificationId}/read`, {
+    method: "PATCH"
+  });
+}
+
+export async function markAllNotificationsRead() {
+  return api<{ updated: number }>("/notifications/read-all", { method: "POST" });
 }
 
 export async function activeCohort() {

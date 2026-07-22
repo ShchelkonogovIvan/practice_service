@@ -9,6 +9,7 @@ import {
   Application,
   AuthUser,
   Cohort,
+  InAppNotification,
   activeCohort,
   clearApplicationDraft,
   clearToken,
@@ -19,6 +20,9 @@ import {
   listAdminDocuments,
   listCohortApplications,
   listCohorts,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
   myApplications,
   saveApplicationDraft,
   setCohortCompletion,
@@ -37,6 +41,7 @@ import { StudentDocuments } from "@/components/student-documents";
 import { AdminDocumentsPanel } from "@/components/admin-documents";
 import { TaskBoard } from "@/components/task-board";
 import { buildAdminOverview, filterAdminApplications, type AdminOverviewData } from "@/lib/admin-dashboard";
+import { NotificationCenter } from "@/components/notification-center";
 
 type CohortForm = {
   name: string;
@@ -99,6 +104,8 @@ export function DashboardShell() {
   const [expandedCohortId, setExpandedCohortId] = useState<string | null>(null);
   const [studentTab, setStudentTab] = useState<StudentTab>("profile");
   const [studentCohortId, setStudentCohortId] = useState("");
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const isAdmin = user?.role === "ADMIN";
   const approvedApplications = applications.filter((application) => application.status === "APPROVED");
@@ -120,20 +127,29 @@ export function DashboardShell() {
     }
   }, [applications, studentCohortId]);
 
+  useEffect(() => {
+    if (!user) return;
+    const interval = window.setInterval(refreshNotifications, 30_000);
+    return () => window.clearInterval(interval);
+  }, [user?.id]);
+
   async function loadDashboard() {
     setLoading(true);
     setLoadError(null);
 
     try {
-      const [userResult, applicationResult, cohortResult] = await Promise.all([
+      const [userResult, applicationResult, cohortResult, notificationResult] = await Promise.all([
         currentUser(),
         myApplications(),
-        activeCohort()
+        activeCohort(),
+        listNotifications().catch(() => ({ notifications: [], unreadCount: 0 }))
       ]);
 
       setUser(userResult.user);
       setApplications(applicationResult.applications);
       setActiveCohorts(cohortResult.cohorts ?? (cohortResult.cohort ? [cohortResult.cohort] : []));
+      setNotifications(notificationResult.notifications);
+      setUnreadNotifications(notificationResult.unreadCount);
       const answerCohorts = uniqueCohorts([
         ...(cohortResult.cohorts ?? []),
         ...applicationResult.applications.map((application) => application.cohort)
@@ -160,6 +176,41 @@ export function DashboardShell() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function refreshNotifications() {
+    try {
+      const result = await listNotifications();
+      setNotifications(result.notifications);
+      setUnreadNotifications(result.unreadCount);
+    } catch {
+      // Keep the rest of the dashboard available during a background refresh failure.
+    }
+  }
+
+  function openNotification(notification: InAppNotification) {
+    if (!notification.readAt) {
+      const readAt = new Date().toISOString();
+      setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt } : item));
+      setUnreadNotifications((current) => Math.max(0, current - 1));
+      void markNotificationRead(notification.id).catch(refreshNotifications);
+    }
+
+    if (!isAdmin) {
+      const target: Record<InAppNotification["section"], StudentTab> = {
+        APPLICATIONS: "applications",
+        DOCUMENTS: "documents",
+        TASKS: "tasks"
+      };
+      setStudentTab(target[notification.section]);
+    }
+  }
+
+  function readAllNotifications() {
+    const readAt = new Date().toISOString();
+    setNotifications((current) => current.map((item) => item.readAt ? item : { ...item, readAt }));
+    setUnreadNotifications(0);
+    void markAllNotificationsRead().catch(refreshNotifications);
   }
 
   function logout() {
@@ -250,10 +301,18 @@ export function DashboardShell() {
             <p className="text-sm text-muted">Личный кабинет</p>
           </div>
         </div>
-        <Button className="w-10 px-0 sm:w-auto sm:px-4" variant="secondary" onClick={logout} title="Выйти" aria-label="Выйти">
-          <LogOut className="h-4 w-4 sm:mr-2" />
-          <span className="hidden sm:inline">Выйти</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <NotificationCenter
+            notifications={notifications}
+            unreadCount={unreadNotifications}
+            onOpen={openNotification}
+            onReadAll={readAllNotifications}
+          />
+          <Button className="w-10 px-0 sm:w-auto sm:px-4" variant="secondary" onClick={logout} title="Выйти" aria-label="Выйти">
+            <LogOut className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Выйти</span>
+          </Button>
+        </div>
       </header>
 
       {loadError ? (

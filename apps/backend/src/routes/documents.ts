@@ -14,6 +14,8 @@ import { generatePracticeDocument, PracticeDocumentKind } from "../lib/document-
 import { documentReadiness, writableReviewFields, writableStudentFields } from "../lib/document-readiness.js";
 import { formatShortFio } from "../lib/document-names.js";
 import { notifyReportReview } from "../lib/notifications.js";
+import { createAdminNotifications, createUserNotification } from "../lib/in-app-notifications.js";
+import { reportReviewContent, reportUploadedContent } from "../lib/notification-content.js";
 import { assertValidReportFile } from "../lib/report-file.js";
 import { prisma } from "../lib/prisma.js";
 import { asObject, stringField } from "../utils/body.js";
@@ -129,6 +131,12 @@ documentsRouter.post(
       if (existing?.reportFileUrl) {
         await removeReport(existing.reportFileUrl);
       }
+
+      const cohort = await prisma.cohort.findUniqueOrThrow({
+        where: { id: req.params.cohortId },
+        select: { name: true }
+      });
+      await createAdminNotifications(reportUploadedContent(cohort.name, req.user!.email)).catch(() => undefined);
 
       res.status(201).json({ data, readiness: documentReadiness(data) });
     } catch (error) {
@@ -272,6 +280,10 @@ adminDocumentsRouter.patch(
       status as ReportReviewStatus,
       comment
     );
+    await createUserNotification(
+      req.params.userId,
+      reportReviewContent(cohort.name, status as ReportReviewStatus, comment)
+    ).catch(() => undefined);
 
     res.json({ data, readiness: documentReadiness(data), notification });
   })
