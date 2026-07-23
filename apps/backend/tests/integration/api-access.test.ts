@@ -33,8 +33,25 @@ test("API enforces cohort access, file validation and report review workflow", a
   const role = await prisma.cohortRole.create({ data: { cohortId: cohort.id, name: "Backend" } });
   const ownerApplication = await prisma.application.create({ data: { userId: owner.id, cohortId: cohort.id, roleId: role.id, status: ApplicationStatus.APPROVED } });
   await prisma.application.create({ data: { userId: other.id, cohortId: cohort.id, roleId: role.id, status: ApplicationStatus.APPROVED } });
-  await prisma.application.create({ data: { userId: pending.id, cohortId: cohort.id, status: ApplicationStatus.PENDING } });
+  const pendingApplication = await prisma.application.create({ data: { userId: pending.id, cohortId: cohort.id, status: ApplicationStatus.PENDING } });
   const card = await prisma.taskCard.create({ data: { userId: owner.id, cohortId: cohort.id, date: new Date("2026-02-02T00:00:00.000Z"), title: "Owner task" } });
+  const closedCohort = await prisma.cohort.create({
+    data: {
+      name: `Closed integration ${suffix}`,
+      applicationStart: new Date("2025-01-01T00:00:00.000Z"),
+      applicationEnd: new Date("2025-01-31T00:00:00.000Z"),
+      practiceStart: new Date("2025-02-03T00:00:00.000Z"),
+      practiceEnd: new Date("2025-02-28T00:00:00.000Z"),
+      testTask: { create: { content: "Closed task", publishedAt: new Date("2025-01-15T00:00:00.000Z") } }
+    }
+  });
+  const closedRole = await prisma.cohortRole.create({ data: { cohortId: closedCohort.id, name: "Backend" } });
+  const closedOwnerApplication = await prisma.application.create({
+    data: { userId: owner.id, cohortId: closedCohort.id, roleId: closedRole.id, status: ApplicationStatus.APPROVED }
+  });
+  const closedPendingApplication = await prisma.application.create({
+    data: { userId: applicant.id, cohortId: closedCohort.id, status: ApplicationStatus.PENDING }
+  });
 
   const tokens = {
     admin: signAccessToken({ sub: admin.id, role: "ADMIN" }),
@@ -44,12 +61,15 @@ test("API enforces cohort access, file validation and report review workflow", a
     applicant: signAccessToken({ sub: applicant.id, role: "STUDENT" })
   };
   let uploadedPath: string | null = null;
+  let testTaskUploadedPath: string | null = null;
 
   context.after(async () => {
     server.close();
     if (uploadedPath) await unlink(uploadedPath).catch(() => undefined);
+    if (testTaskUploadedPath) await unlink(testTaskUploadedPath).catch(() => undefined);
     await prisma.notification.deleteMany({ where: { message: { contains: suffix } } });
     await prisma.cohort.delete({ where: { id: cohort.id } }).catch(() => undefined);
+    await prisma.cohort.delete({ where: { id: closedCohort.id } }).catch(() => undefined);
     await prisma.user.deleteMany({ where: { id: { in: [admin.id, owner.id, other.id, pending.id, applicant.id] } } });
   });
 
@@ -58,6 +78,38 @@ test("API enforces cohort access, file validation and report review workflow", a
   assert.equal((await request(baseUrl, `/admin/cohorts/${cohort.id}/documents`, tokens.owner)).status, 403);
   assert.equal((await request(baseUrl, `/admin/cohorts/${cohort.id}/export.csv`, tokens.owner)).status, 403);
   assert.equal((await request(baseUrl, `/tasks/${card.id}`, tokens.other, { method: "PATCH", body: JSON.stringify({ title: "Changed" }) })).status, 403);
+  assert.equal((await request(baseUrl, `/cohorts/${closedCohort.id}/tasks`, tokens.owner, {
+    method: "POST",
+    body: JSON.stringify({ date: "2025-02-03", title: "Late task" })
+  })).status, 400);
+  assert.equal((await request(baseUrl, `/cohorts/${closedCohort.id}/documents/me`, tokens.owner, {
+    method: "PUT",
+    body: JSON.stringify({ studentFio: "Иванов Иван" })
+  })).status, 400);
+  assert.equal((await request(baseUrl, `/applications/${closedOwnerApplication.id}/test-task-answer`, tokens.owner, {
+    method: "PUT",
+    body: JSON.stringify({ answer: "Late answer" })
+  })).status, 400);
+  assert.equal((await request(baseUrl, `/applications/${closedPendingApplication.id}`, tokens.applicant, {
+    method: "PATCH",
+    body: JSON.stringify({ answers: {} })
+  })).status, 400);
+
+  const rolesUpdate = await request(baseUrl, `/cohorts/${cohort.id}/roles`, tokens.admin, {
+    method: "PUT",
+    body: JSON.stringify({ roles: ["Backend", "Frontend"] })
+  });
+  assert.equal(rolesUpdate.status, 200);
+  const rolesUpdateData = await rolesUpdate.json() as { cohort: { roles: Array<{ id: string; name: string }> } };
+  assert.equal(rolesUpdateData.cohort.roles.find((item) => item.name === "Backend")?.id, role.id);
+  assert.equal((await prisma.application.findUnique({ where: { id: ownerApplication.id } }))?.roleId, role.id);
+
+  const assignedRoleRemoval = await request(baseUrl, `/cohorts/${cohort.id}/roles`, tokens.admin, {
+    method: "PUT",
+    body: JSON.stringify({ roles: ["Frontend"] })
+  });
+  assert.equal(assignedRoleRemoval.status, 400);
+  assert.equal((await prisma.application.findUnique({ where: { id: ownerApplication.id } }))?.roleId, role.id);
 
   const firstPublication = await request(baseUrl, `/cohorts/${cohort.id}/test-task`, tokens.admin, {
     method: "PUT",
@@ -77,6 +129,16 @@ test("API enforces cohort access, file validation and report review workflow", a
   assert.equal(repeatedPublication.status, 200);
   assert.equal((await repeatedPublication.json() as { notification: { recipients: number } }).notification.recipients, 3);
 
+  const approvedParticipantAnswer = await request(baseUrl, `/applications/${ownerApplication.id}/test-task-answer`, tokens.owner, {
+    method: "PUT",
+    body: JSON.stringify({ answer: "Ответ уже одобренного участника" })
+  });
+  assert.equal(approvedParticipantAnswer.status, 200);
+  assert.equal(
+    (await approvedParticipantAnswer.json() as { application: { testTaskReviewStatus: string } }).application.testTaskReviewStatus,
+    "PENDING"
+  );
+
   const pendingNotifications = await request(baseUrl, "/notifications", tokens.pending);
   assert.equal(pendingNotifications.status, 200);
   const pendingNotificationData = await pendingNotifications.json() as NotificationListResponse;
@@ -89,6 +151,74 @@ test("API enforces cohort access, file validation and report review workflow", a
   assert.equal((await request(baseUrl, "/notifications/read-all", tokens.pending, { method: "POST" })).status, 200);
   const readPendingNotifications = await request(baseUrl, "/notifications", tokens.pending);
   assert.equal((await readPendingNotifications.json() as NotificationListResponse).unreadCount, 0);
+
+  const invalidAnswerLink = await request(baseUrl, `/applications/${pendingApplication.id}/test-task-answer`, tokens.pending, {
+    method: "PUT",
+    body: JSON.stringify({ answer: "Готово", artifactLink: "javascript:alert(1)" })
+  });
+  assert.equal(invalidAnswerLink.status, 400);
+
+  const submittedTestTask = await request(baseUrl, `/applications/${pendingApplication.id}/test-task-answer`, tokens.pending, {
+    method: "PUT",
+    body: JSON.stringify({ answer: "Результат тестового задания", artifactLink: "https://example.com/result" })
+  });
+  assert.equal(submittedTestTask.status, 200);
+  assert.equal((await submittedTestTask.json() as { application: { testTaskReviewStatus: string } }).application.testTaskReviewStatus, "PENDING");
+  const prematureApproval = await request(baseUrl, `/admin/applications/${pendingApplication.id}/status`, tokens.admin, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "APPROVED", roleId: role.id })
+  });
+  assert.equal(prematureApproval.status, 400);
+  assert.equal((await request(baseUrl, `/applications/${pendingApplication.id}/test-task-answer`, tokens.other, {
+    method: "PUT",
+    body: JSON.stringify({ answer: "Чужой ответ" })
+  })).status, 404);
+
+  const invalidTestTaskForm = new FormData();
+  invalidTestTaskForm.append("file", new Blob(["plain text"], { type: "application/pdf" }), "answer.pdf");
+  assert.equal((await request(baseUrl, `/applications/${pendingApplication.id}/test-task-file`, tokens.pending, {
+    method: "POST",
+    body: invalidTestTaskForm
+  })).status, 400);
+
+  const validTestTaskForm = new FormData();
+  validTestTaskForm.append("file", new Blob(["%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF"], { type: "application/pdf" }), "answer.pdf");
+  const validTestTaskUpload = await request(baseUrl, `/applications/${pendingApplication.id}/test-task-file`, tokens.pending, {
+    method: "POST",
+    body: validTestTaskForm
+  });
+  assert.equal(validTestTaskUpload.status, 201);
+  const testTaskApplication = (await validTestTaskUpload.json() as {
+    application: { testTaskFileUrl: string; testTaskFileName: string };
+  }).application;
+  assert.equal(testTaskApplication.testTaskFileName, "answer.pdf");
+  testTaskUploadedPath = path.resolve(env.uploadsDir, testTaskApplication.testTaskFileUrl);
+  assert.equal((await request(baseUrl, `/applications/${pendingApplication.id}/test-task-file`, tokens.other)).status, 404);
+  assert.equal((await request(baseUrl, `/admin/applications/${pendingApplication.id}/test-task-file`, tokens.admin)).status, 200);
+
+  const testTaskReviewWithoutComment = await request(baseUrl, `/admin/applications/${pendingApplication.id}/test-task-review`, tokens.admin, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "CHANGES_REQUESTED", comment: "" })
+  });
+  assert.equal(testTaskReviewWithoutComment.status, 400);
+  const testTaskChangesRequested = await request(baseUrl, `/admin/applications/${pendingApplication.id}/test-task-review`, tokens.admin, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "CHANGES_REQUESTED", comment: "Добавьте описание запуска" })
+  });
+  assert.equal(testTaskChangesRequested.status, 200);
+  assert.equal((await testTaskChangesRequested.json() as {
+    application: { testTaskReviewStatus: string; testTaskReviewComment: string };
+  }).application.testTaskReviewStatus, "CHANGES_REQUESTED");
+  const testTaskApproved = await request(baseUrl, `/admin/applications/${pendingApplication.id}/test-task-review`, tokens.admin, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "APPROVED", comment: "" })
+  });
+  assert.equal(testTaskApproved.status, 200);
+  const applicationApprovedAfterTestTask = await request(baseUrl, `/admin/applications/${pendingApplication.id}/status`, tokens.admin, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "APPROVED", roleId: role.id })
+  });
+  assert.equal(applicationApprovedAfterTestTask.status, 200);
 
   const submittedApplication = await request(baseUrl, `/cohorts/${cohort.id}/applications`, tokens.applicant, {
     method: "POST",

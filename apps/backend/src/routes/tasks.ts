@@ -4,6 +4,7 @@ import { asyncHandler } from "../middleware/async-handler.js";
 import { requireAuth } from "../middleware/auth.js";
 import { badRequest, forbidden, notFound } from "../http/errors.js";
 import { requireApprovedApplication } from "../lib/cohort-access.js";
+import { assertPracticeOpen, isPracticeClosed } from "../lib/practice-period.js";
 import { prisma } from "../lib/prisma.js";
 import { assertCanEditTaskCard, assertTaskDateAllowed, parseTaskDate } from "../lib/task-policy.js";
 import { asObject, optionalStringField, stringField } from "../utils/body.js";
@@ -87,7 +88,8 @@ tasksRouter.get(
         name: cohort.name,
         practiceStart: cohort.practiceStart,
         practiceEnd: cohort.practiceEnd,
-        completedAt: cohort.completedAt
+        completedAt: cohort.completedAt,
+        closed: isPracticeClosed(cohort)
       },
       participants
     });
@@ -102,9 +104,7 @@ tasksRouter.post(
     }
 
     const application = await requireApprovedApplication(req.user!.id, req.params.cohortId);
-    if (application.cohort.completedAt) {
-      throw badRequest("Практика завершена, добавление задач недоступно");
-    }
+    assertPracticeOpen(application.cohort);
     const body = asObject(req.body);
     const date = parseTaskDate(stringField(body, "date"));
 
@@ -137,15 +137,15 @@ tasksRouter.patch(
     if (!card) {
       throw notFound("Задача не найдена");
     }
-    if (card.cohort.completedAt) {
-      throw badRequest("Практика завершена, изменение задач недоступно");
-    }
+    const cohort = await prisma.cohort.findUniqueOrThrow({
+      where: { id: card.cohortId },
+      select: { practiceEnd: true, completedAt: true }
+    });
+    assertPracticeOpen(cohort);
     assertCanEditTaskCard(req.user!.role, req.user!.id, card.userId);
     if (req.user!.role !== UserRole.ADMIN) {
       const application = await requireApprovedApplication(req.user!.id, card.cohortId);
-      if (application.cohort.completedAt) {
-        throw badRequest("Практика завершена, изменение задач недоступно");
-      }
+      assertPracticeOpen(application.cohort);
     }
 
     const updated = await prisma.taskCard.update({

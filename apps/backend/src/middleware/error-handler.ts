@@ -14,8 +14,8 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
 
   if (error instanceof multer.MulterError) {
     const message = error.code === "LIMIT_FILE_SIZE"
-      ? "Размер отчёта не должен превышать 10 МБ"
-      : "Не удалось загрузить файл отчёта";
+      ? "Размер файла не должен превышать 10 МБ"
+      : "Не удалось загрузить файл";
     return res.status(400).json({ message, details: error.code });
   }
 

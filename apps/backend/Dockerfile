@@ -16,13 +16,14 @@ RUN pnpm --filter @practice/backend build
 
 FROM base AS runner
 ENV NODE_ENV=production
+ENV TEMPLATES_DIR=/app/templates
 WORKDIR /app/apps/backend
 COPY --from=build /app/node_modules /app/node_modules
 COPY --from=build /app/apps/backend/node_modules ./node_modules
 COPY --from=build /app/apps/backend/package.json ./package.json
 COPY --from=build /app/apps/backend/dist ./dist
 COPY --from=build /app/apps/backend/prisma ./prisma
-COPY --from=build /app/apps/backend/templates ./templates
+COPY --from=build /app/apps/backend/templates /app/templates
 EXPOSE 4000
 CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy --schema prisma/schema.prisma && node dist/server.js"]
 

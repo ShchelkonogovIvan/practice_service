@@ -6,6 +6,10 @@ type ExportApplication = {
   status: ApplicationStatus;
   answers: unknown;
   reviewComment: string | null;
+  testTaskAnswer: string | null;
+  testTaskArtifactLink: string | null;
+  testTaskFileName: string | null;
+  testTaskReviewStatus: ReportReviewStatus | null;
   createdAt: Date;
   user: { id: string; email: string };
   role: { name: string } | null;
@@ -37,6 +41,10 @@ export function buildCohortCsv(
     "Роль",
     "Дата подачи",
     "Комментарий",
+    "Ответ на тестовое задание",
+    "Ссылка на результат ТЗ",
+    "Файл ответа на ТЗ",
+    "Статус проверки ТЗ",
     ...surveyFields.map((field) => field.label),
     "ФИО для документов",
     "Группа",
@@ -58,6 +66,10 @@ export function buildCohortCsv(
       application.role?.name ?? "",
       application.createdAt.toISOString(),
       application.reviewComment ?? "",
+      application.testTaskAnswer ?? "",
+      application.testTaskArtifactLink ?? "",
+      application.testTaskFileName ?? "",
+      reportStatusLabel(application.testTaskReviewStatus),
       ...surveyFields.map((field) => answerText(answers[field.id])),
       document?.studentFio ?? "",
       document?.group ?? "",

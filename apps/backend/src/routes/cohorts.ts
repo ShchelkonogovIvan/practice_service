@@ -235,24 +235,30 @@ cohortsRouter.put(
       .filter((role) => !nextRoleNames.has(role.name) && role._count.applications > 0)
       .map((role) => role.name);
 
+    if (removedAssignedRoles.length > 0) {
+      throw badRequest(
+        `Нельзя удалить назначенные роли: ${removedAssignedRoles.join(", ")}. Сначала назначьте участникам другие роли.`
+      );
+    }
+
+    const existingRoleNames = new Set(existingRoles.map((role) => role.name));
+    const removedRoleIds = existingRoles
+      .filter((role) => !nextRoleNames.has(role.name))
+      .map((role) => role.id);
+    const addedRoleNames = roles.filter((roleName) => !existingRoleNames.has(roleName));
+
     const updated = await prisma.cohort.update({
       where: { id: cohort.id },
       data: {
         roles: {
-          deleteMany: {},
-          create: roles.map((roleName) => ({ name: roleName }))
+          deleteMany: { id: { in: removedRoleIds } },
+          create: addedRoleNames.map((roleName) => ({ name: roleName }))
         }
       },
       include: cohortInclude
     });
 
-    res.json({
-      cohort: updated,
-      warning:
-        removedAssignedRoles.length > 0
-          ? `Удалены назначенные роли: ${removedAssignedRoles.join(", ")}`
-          : null
-    });
+    res.json({ cohort: updated, warning: null });
   })
 );
 

@@ -2,6 +2,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 const TOKEN_KEY = "practice_token";
 const PENDING_APPLICATION_KEY = "practice_pending_application";
 export { clearApplicationDraft, getApplicationDraft, saveApplicationDraft } from "./application-drafts";
+export { clearTestTaskDraft, getTestTaskDraft, saveTestTaskDraft } from "./test-task-drafts";
 
 export class ApiError extends Error {
   constructor(message: string, public status?: number) {
@@ -44,6 +45,13 @@ export type Application = {
   status: "PENDING" | "APPROVED" | "REJECTED" | "REMOVED";
   answers: Record<string, unknown>;
   reviewComment: string | null;
+  testTaskAnswer: string | null;
+  testTaskArtifactLink: string | null;
+  testTaskFileUrl: string | null;
+  testTaskFileName: string | null;
+  testTaskSubmittedAt: string | null;
+  testTaskReviewStatus: ReportReviewStatus | null;
+  testTaskReviewComment: string | null;
   createdAt: string;
   updatedAt: string;
   role: null | { id: string; name: string };
@@ -153,6 +161,7 @@ export type TaskBoard = {
     practiceStart: string;
     practiceEnd: string;
     completedAt: string | null;
+    closed: boolean;
   };
   participants: TaskParticipant[];
 };
@@ -414,6 +423,33 @@ export function getPendingApplication() {
 
 export function clearPendingApplication() {
   window.localStorage.removeItem(PENDING_APPLICATION_KEY);
+}
+
+export async function saveTestTaskAnswer(applicationId: string, answer: string, artifactLink: string) {
+  return api<{ application: Application }>(`/applications/${applicationId}/test-task-answer`, {
+    method: "PUT",
+    body: JSON.stringify({ answer, artifactLink })
+  });
+}
+
+export async function uploadTestTaskFile(applicationId: string, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  return api<{ application: Application }>(`/applications/${applicationId}/test-task-file`, {
+    method: "POST",
+    body: form
+  });
+}
+
+export async function reviewTestTaskAnswer(
+  applicationId: string,
+  status: ReportReviewStatus,
+  comment: string
+) {
+  return api<{ application: AdminApplication }>(`/admin/applications/${applicationId}/test-task-review`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, comment })
+  });
 }
 
 export async function myDocumentData(cohortId: string) {

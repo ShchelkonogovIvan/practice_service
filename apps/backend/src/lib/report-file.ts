@@ -3,14 +3,14 @@ import path from "node:path";
 import PizZip from "pizzip";
 import { badRequest } from "../http/errors.js";
 
-export async function assertValidReportFile(filePath: string, originalName: string) {
+export async function assertValidReportFile(filePath: string, originalName: string, subject = "отчёта") {
   const extension = path.extname(originalName).toLowerCase();
   const content = await readFile(filePath);
 
   if (extension === ".pdf") {
     const tail = content.subarray(Math.max(0, content.length - 1024)).toString("ascii");
     if (content.subarray(0, 5).toString("ascii") !== "%PDF-" || !tail.includes("%%EOF")) {
-      throw badRequest("Файл не является корректным PDF");
+      throw badRequest(`Файл ${subject} не является корректным PDF`);
     }
     return;
   }
@@ -23,9 +23,9 @@ export async function assertValidReportFile(filePath: string, originalName: stri
       }
       return;
     } catch {
-      throw badRequest("Файл не является корректным DOCX");
+      throw badRequest(`Файл ${subject} не является корректным DOCX`);
     }
   }
 
-  throw badRequest("Допустимые форматы отчёта: docx, pdf");
+  throw badRequest(`Допустимые форматы файла ${subject}: docx, pdf`);
 }

@@ -17,6 +17,7 @@ import { notifyReportReview } from "../lib/notifications.js";
 import { createAdminNotifications, createUserNotification } from "../lib/in-app-notifications.js";
 import { reportReviewContent, reportUploadedContent } from "../lib/notification-content.js";
 import { assertValidReportFile } from "../lib/report-file.js";
+import { assertPracticeOpen } from "../lib/practice-period.js";
 import { prisma } from "../lib/prisma.js";
 import { asObject, stringField } from "../utils/body.js";
 
@@ -65,7 +66,8 @@ documentsRouter.get(
 documentsRouter.put(
   "/cohorts/:cohortId/documents/me",
   asyncHandler(async (req, res) => {
-    await requireApprovedApplication(req.user!.id, req.params.cohortId);
+    const application = await requireApprovedApplication(req.user!.id, req.params.cohortId);
+    assertPracticeOpen(application.cohort);
     const body = asObject(req.body);
     const values = pickStrings(body, writableStudentFields);
 
@@ -91,7 +93,8 @@ documentsRouter.put(
 documentsRouter.post(
   "/cohorts/:cohortId/documents/me/report",
   asyncHandler(async (req, _res, next) => {
-    await requireApprovedApplication(req.user!.id, req.params.cohortId);
+    const application = await requireApprovedApplication(req.user!.id, req.params.cohortId);
+    assertPracticeOpen(application.cohort);
     next();
   }),
   upload.single("report"),

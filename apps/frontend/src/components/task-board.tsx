@@ -99,7 +99,7 @@ export function TaskBoard({
       date: dateKey(card.date),
       participant,
       card,
-      readOnly: Boolean(board?.cohort.completedAt) || isAdmin || participant.userId !== currentUserId
+      readOnly: Boolean(board?.cohort.closed) || isAdmin || participant.userId !== currentUserId
     });
   }
 
@@ -211,7 +211,7 @@ export function TaskBoard({
           <Button type="button" variant="secondary" onClick={loadBoard}>Повторить</Button>
         </div>
       ) : null}
-      {board?.cohort.completedAt ? (
+      {board?.cohort.closed ? (
         <p className="rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-muted">
           Практика завершена. Задачи доступны только для просмотра.
         </p>
@@ -225,7 +225,7 @@ export function TaskBoard({
       {!loading && board && board.participants.length > 0 && days.length > 0 ? (
         <div className="mt-4 grid gap-4 md:hidden">
           {board.participants.map((participant) => {
-            const canEdit = !board.cohort.completedAt && !isAdmin && participant.userId === currentUserId;
+            const canEdit = !board.cohort.closed && !isAdmin && participant.userId === currentUserId;
             return (
               <section key={participant.userId} className="overflow-hidden rounded-md border border-border bg-white">
                 <div className="bg-slate-50 px-3 py-3">
@@ -283,7 +283,7 @@ export function TaskBoard({
             </div>
 
             {board.participants.map((participant) => {
-              const canEdit = !board.cohort.completedAt && !isAdmin && participant.userId === currentUserId;
+              const canEdit = !board.cohort.closed && !isAdmin && participant.userId === currentUserId;
               return (
                 <div
                   key={participant.userId}

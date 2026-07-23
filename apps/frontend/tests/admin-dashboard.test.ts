@@ -112,6 +112,13 @@ function application(
     status,
     answers,
     reviewComment: null,
+    testTaskAnswer: null,
+    testTaskArtifactLink: null,
+    testTaskFileUrl: null,
+    testTaskFileName: null,
+    testTaskSubmittedAt: null,
+    testTaskReviewStatus: null,
+    testTaskReviewComment: null,
     createdAt: "2026-07-20T00:00:00.000Z",
     updatedAt: "2026-07-20T00:00:00.000Z",
     role: { id: `${id}-role`, name: roleName },
@@ -202,7 +209,8 @@ function taskBoard(doneValues: Array<string | null>): TaskBoard {
       name: "Летняя практика",
       practiceStart: "2026-07-01T00:00:00.000Z",
       practiceEnd: "2026-07-31T00:00:00.000Z",
-      completedAt: null
+      completedAt: null,
+      closed: false
     },
     participants: [{
       userId: "user-id",

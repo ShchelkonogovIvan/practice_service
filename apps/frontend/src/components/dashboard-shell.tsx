@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, ArrowDown, ArrowUp, ClipboardList, Download, ExternalLink, FileText, LayoutDashboard, ListChecks, LogOut, Plus, RotateCcw, Search, Settings, Trash2, UserMinus, UserRound } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, ClipboardList, Download, ExternalLink, FileText, LayoutDashboard, ListChecks, LogOut, Plus, RotateCcw, Search, Settings, Trash2, Upload, UserMinus, UserRound } from "lucide-react";
 import {
   AdminApplication,
   ApiError,
@@ -12,11 +12,13 @@ import {
   InAppNotification,
   activeCohort,
   clearApplicationDraft,
+  clearTestTaskDraft,
   clearToken,
   createCohort,
   currentUser,
   downloadApiFile,
   getApplicationDraft,
+  getTestTaskDraft,
   getTaskBoard,
   listAdminDocuments,
   listCohortApplications,
@@ -26,13 +28,17 @@ import {
   markNotificationRead,
   myApplications,
   saveApplicationDraft,
+  saveTestTaskDraft,
+  saveTestTaskAnswer,
   setCohortCompletion,
   submitApplication,
+  reviewTestTaskAnswer,
   updateCohortRoles,
   updateCohortSurvey,
   updateApplicationStatus,
   updateMyApplication,
-  updateTestTask
+  updateTestTask,
+  uploadTestTaskFile
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -109,22 +115,24 @@ export function DashboardShell() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   const isAdmin = user?.role === "ADMIN";
-  const approvedApplications = applications.filter((application) => application.status === "APPROVED");
-  const approvedApplication = approvedApplications.find((application) => application.cohort.id === studentCohortId)
-    ?? approvedApplications[0];
+  const selectedApplication = applications.find((application) => application.cohort.id === studentCohortId)
+    ?? applications[0];
+  const approvedApplication = selectedApplication?.status === "APPROVED" ? selectedApplication : null;
   const editableCohorts = isAdmin
     ? []
     : uniqueCohorts([
         ...activeCohorts.filter((item) => !applicationForCohort(applications, item.id)),
-        ...applications.filter((application) => application.status === "PENDING").map((application) => application.cohort)
+        ...applications
+          .filter((application) => application.status === "PENDING" && !isCohortClosed(application.cohort))
+          .map((application) => application.cohort)
       ]);
   useEffect(() => {
     loadDashboard();
   }, []);
 
   useEffect(() => {
-    if (!approvedApplications.some((application) => application.cohort.id === studentCohortId)) {
-      setStudentCohortId(approvedApplications[0]?.cohort.id ?? "");
+    if (!applications.some((application) => application.cohort.id === studentCohortId)) {
+      setStudentCohortId(applications[0]?.cohort.id ?? "");
     }
   }, [applications, studentCohortId]);
 
@@ -133,6 +141,22 @@ export function DashboardShell() {
     const interval = window.setInterval(refreshNotifications, 30_000);
     return () => window.clearInterval(interval);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.role !== "STUDENT") return;
+
+    const refresh = () => {
+      myApplications()
+        .then((result) => setApplications(result.applications))
+        .catch(() => undefined);
+    };
+    const interval = window.setInterval(refresh, 15_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [user?.id, user?.role]);
 
   async function loadDashboard() {
     setLoading(true);
@@ -189,6 +213,11 @@ export function DashboardShell() {
     }
   }
 
+  async function refreshAdminCohorts() {
+    const cohortList = await listCohorts();
+    setCohorts(cohortList.cohorts);
+  }
+
   function openNotification(notification: InAppNotification) {
     if (!notification.readAt) {
       const readAt = new Date().toISOString();
@@ -240,7 +269,7 @@ export function DashboardShell() {
 
       setForm(initialForm);
       setMessage("Когорта создана");
-      await loadDashboard();
+      await refreshAdminCohorts();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не получилось создать когорту");
     } finally {
@@ -337,7 +366,7 @@ export function DashboardShell() {
                 actionMessage={message}
                 setForm={setForm}
                 onCreateCohort={onCreateCohort}
-                onCohortChange={loadDashboard}
+                onCohortChange={refreshAdminCohorts}
               />
             </>
           ) : (
@@ -358,8 +387,8 @@ export function DashboardShell() {
                   <div className="grid gap-4">
                     <ProfileCard user={user} />
                     <ActiveCohortCard
-                      applications={approvedApplications}
-                      selectedCohortId={approvedApplication?.cohort.id ?? ""}
+                      applications={applications}
+                      selectedCohortId={selectedApplication?.cohort.id ?? ""}
                       onChange={setStudentCohortId}
                     />
                   </div>
@@ -402,11 +431,18 @@ export function DashboardShell() {
                   <UnavailableSection text="Документы станут доступны после одобрения заявки." />
                 ) : null}
 
-                {studentTab === "tasks" && approvedApplication && user ? (
-                  <TaskBoard cohortId={approvedApplication.cohort.id} currentUserId={user.id} />
-                ) : null}
-                {studentTab === "tasks" && !approvedApplication ? (
-                  <UnavailableSection text="Задачи станут доступны после одобрения заявки." />
+                {studentTab === "tasks" && user ? (
+                  <StudentTasks
+                    applications={applications}
+                    selectedApplication={selectedApplication ?? null}
+                    approvedApplication={approvedApplication}
+                    selectedCohortId={selectedApplication?.cohort.id ?? ""}
+                    currentUserId={user.id}
+                    onCohortChange={setStudentCohortId}
+                    onApplicationUpdated={(updated) => {
+                      setApplications((current) => current.map((item) => item.id === updated.id ? updated : item));
+                    }}
+                  />
                 ) : null}
               </section>
             </div>
@@ -522,20 +558,23 @@ function ActiveCohortCard({
     <Card className="p-5">
       <h2 className="text-lg font-semibold">Рабочая когорта</h2>
       {applications.length ? (
-        <label className="mt-3 grid gap-2 text-sm font-medium">
-          Документы и задачи
+        <label className="mt-3 block">
+          <span className="sr-only">Рабочая когорта</span>
           <select
+            aria-label="Рабочая когорта"
             className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
             value={selectedCohortId}
             onChange={(event) => onChange(event.target.value)}
           >
             {applications.map((application) => (
-              <option key={application.id} value={application.cohort.id}>{application.cohort.name}</option>
+              <option key={application.id} value={application.cohort.id}>
+                {application.cohort.name} · {statusLabel(application.status)}
+              </option>
             ))}
           </select>
         </label>
       ) : (
-        <p className="mt-2 text-sm text-muted">Рабочая когорта появится после одобрения заявки.</p>
+        <p className="mt-2 text-sm text-muted">Когорта появится после подачи заявки.</p>
       )}
     </Card>
   );
@@ -687,7 +726,13 @@ function SurveyFieldControl({
   );
 }
 
-function StudentApplications({ applications, onEdit }: { applications: Application[]; onEdit: (application: Application) => void }) {
+function StudentApplications({
+  applications,
+  onEdit
+}: {
+  applications: Application[];
+  onEdit: (application: Application) => void;
+}) {
   return (
     <Card className="p-5">
       <h2 className="text-lg font-semibold">Мои заявки</h2>
@@ -712,22 +757,12 @@ function StudentApplications({ applications, onEdit }: { applications: Applicati
                   {application.reviewComment ? (
                     <p className="mt-2 text-sm text-red-700">Комментарий: {application.reviewComment}</p>
                   ) : null}
-                  <div className="mt-3 rounded-md border border-border bg-slate-50 p-3">
-                    <p className="text-sm font-medium">Тестовое задание</p>
-                    {application.cohort.testTask?.publishedAt ? (
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-muted">
-                        {application.cohort.testTask.content}
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted">Тестовое задание появится позже.</p>
-                    )}
-                  </div>
                 </div>
                 <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
                   {statusLabel(application.status)}
                 </span>
               </div>
-              {application.status === "PENDING" ? (
+              {application.status === "PENDING" && !isCohortClosed(application.cohort) ? (
                 <Button type="button" variant="secondary" className="mt-3" onClick={() => onEdit(application)}>
                   Изменить заявку
                 </Button>
@@ -737,6 +772,92 @@ function StudentApplications({ applications, onEdit }: { applications: Applicati
         )}
       </div>
     </Card>
+  );
+}
+
+function StudentTasks({
+  applications,
+  selectedApplication,
+  approvedApplication,
+  selectedCohortId,
+  currentUserId,
+  onCohortChange,
+  onApplicationUpdated
+}: {
+  applications: Application[];
+  selectedApplication: Application | null;
+  approvedApplication: Application | null;
+  selectedCohortId: string;
+  currentUserId: string;
+  onCohortChange: (cohortId: string) => void;
+  onApplicationUpdated: (application: Application) => void;
+}) {
+  return (
+    <div className="grid gap-4">
+      <Card className="p-5">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(220px,320px)] sm:items-end">
+          <div>
+            <h2 className="text-lg font-semibold">Тестовое задание</h2>
+            <p className="mt-1 text-sm text-muted">
+              Выполните задание для выбранной когорты и отправьте результат на проверку.
+            </p>
+          </div>
+          {applications.length > 1 ? (
+            <label className="grid gap-2 text-sm font-medium">
+              Когорта
+              <select
+                className="h-10 w-full rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                value={selectedCohortId}
+                onChange={(event) => onCohortChange(event.target.value)}
+              >
+                {applications.map((application) => (
+                  <option key={application.id} value={application.cohort.id}>
+                    {application.cohort.name} · {statusLabel(application.status)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          {!selectedApplication ? (
+            <p className="text-sm text-muted">
+              Тестовое задание появится здесь после подачи заявки.
+            </p>
+          ) : selectedApplication.cohort.testTask?.publishedAt ? (
+              <section className="rounded-md border border-border bg-slate-50 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 className="font-semibold">{selectedApplication.cohort.name}</h3>
+                    <p className="mt-1 text-xs text-muted">Заявка: {statusLabel(selectedApplication.status)}</p>
+                  </div>
+                  {selectedApplication.testTaskSubmittedAt ? (
+                    <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
+                      {testTaskReviewLabel(selectedApplication.testTaskReviewStatus)}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-sm">{selectedApplication.cohort.testTask.content}</p>
+                <TestTaskSubmission
+                  key={selectedApplication.id}
+                  application={selectedApplication}
+                  onUpdated={onApplicationUpdated}
+                  showStatus={false}
+                />
+              </section>
+          ) : (
+            <p className="text-sm text-muted">Для выбранной когорты тестовое задание ещё не опубликовано.</p>
+          )}
+        </div>
+      </Card>
+
+      {approvedApplication ? (
+        <TaskBoard cohortId={approvedApplication.cohort.id} currentUserId={currentUserId} />
+      ) : (
+        <UnavailableSection text="Рабочие задачи станут доступны после одобрения заявки и тестового задания." />
+      )}
+    </div>
   );
 }
 
@@ -971,11 +1092,7 @@ function CohortRow({
       await updateCohortSurvey(cohort.id, serializeSurveyFields(surveyFields));
       const result = await updateCohortRoles(cohort.id, roleNames);
       await onSaved();
-      setSettingsMessage(
-        result.warning
-          ? "Настройки сохранены. Удаленная роль уже была назначена практиканту, назначение у заявки сброшено."
-          : "Настройки анкеты и ролей сохранены"
-      );
+      setSettingsMessage(result.warning ?? "Настройки анкеты и ролей сохранены");
     } catch (caught) {
       setSettingsError(caught instanceof Error ? caught.message : "Не получилось сохранить анкету и роли");
     } finally {
@@ -1080,7 +1197,33 @@ function CohortRow({
           {activeTab === "overview" ? <AdminOverview cohort={cohort} onNavigate={setActiveTab} /> : null}
           {activeTab === "applications" ? <AdminApplicationsPanel cohort={cohort} /> : null}
           {activeTab === "documents" ? <AdminDocumentsPanel cohort={cohort} /> : null}
-          {activeTab === "tasks" ? <TaskBoard cohortId={cohort.id} currentUserId="" isAdmin /> : null}
+          {activeTab === "tasks" ? (
+            <div className="grid gap-4">
+              <Card className="p-5">
+                <h3 className="text-base font-semibold">Тестовое задание</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Опубликуйте входное задание, которое студенты выполнят до одобрения заявки.
+                </p>
+                <div className="mt-4 grid gap-3">
+                  <TextAreaField label="Содержание задания" value={content} rows={5} onChange={setContent} />
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={published}
+                      onChange={(event) => setPublished(event.target.checked)}
+                    />
+                    Опубликовать тестовое задание
+                  </label>
+                  {taskError ? <p className="text-sm text-red-700">{taskError}</p> : null}
+                  {taskMessage ? <p className="text-sm text-green-700">{taskMessage}</p> : null}
+                  <Button type="button" disabled={savingTask || !content.trim()} onClick={onSaveTask}>
+                    {savingTask ? "Сохраняем..." : "Сохранить тестовое задание"}
+                  </Button>
+                </div>
+              </Card>
+              <TaskBoard cohortId={cohort.id} currentUserId="" isAdmin />
+            </div>
+          ) : null}
 
           {activeTab === "settings" ? (
         <Card className="p-5">
@@ -1135,30 +1278,145 @@ function CohortRow({
             </Button>
           </div>
 
-          <div className="mt-6 border-t border-border pt-5">
-            <h3 className="text-base font-semibold">Тестовое задание</h3>
-            <div className="mt-4 grid gap-3">
-              <TextAreaField label="Содержание задания" value={content} rows={5} onChange={setContent} />
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={published}
-                  onChange={(event) => setPublished(event.target.checked)}
-                />
-                Опубликовать тестовое задание
-              </label>
-              {taskError ? <p className="text-sm text-red-700">{taskError}</p> : null}
-              {taskMessage ? <p className="text-sm text-green-700">{taskMessage}</p> : null}
-              <Button type="button" disabled={savingTask || !content.trim()} onClick={onSaveTask}>
-                {savingTask ? "Сохраняем..." : "Сохранить тестовое задание"}
-              </Button>
-            </div>
-          </div>
         </Card>
           ) : null}
         </div>
       </div> : null}
     </section>
+  );
+}
+
+function TestTaskSubmission({
+  application,
+  onUpdated,
+  showStatus = true
+}: {
+  application: Application;
+  onUpdated: (application: Application) => void;
+  showStatus?: boolean;
+}) {
+  const initialDraft = getTestTaskDraft(application.id);
+  const [answer, setAnswer] = useState(application.testTaskAnswer ?? initialDraft.answer);
+  const [artifactLink, setArtifactLink] = useState(application.testTaskArtifactLink ?? initialDraft.artifactLink);
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const editable = application.status !== "REJECTED"
+    && application.status !== "REMOVED"
+    && !isCohortClosed(application.cohort)
+    && application.testTaskReviewStatus !== "APPROVED";
+
+  async function saveAnswer() {
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await saveTestTaskAnswer(application.id, answer, artifactLink);
+      clearTestTaskDraft(application.id);
+      onUpdated(result.application);
+      setMessage("Ответ отправлен на проверку");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось отправить ответ");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function uploadFile() {
+    if (!file) {
+      setError("Выберите файл ответа");
+      return;
+    }
+    setUploading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await uploadTestTaskFile(application.id, file);
+      onUpdated(result.application);
+      setFile(null);
+      setMessage("Файл загружен и отправлен на проверку");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось загрузить файл");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 grid gap-3 border-t border-border pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">Ответ на тестовое задание</p>
+        {showStatus && application.testTaskSubmittedAt ? (
+          <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
+            {testTaskReviewLabel(application.testTaskReviewStatus)}
+          </span>
+        ) : null}
+      </div>
+
+      {application.testTaskReviewComment ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Комментарий проверяющего: {application.testTaskReviewComment}
+        </p>
+      ) : null}
+
+      <TextAreaField
+        label="Текст ответа"
+        value={answer}
+        rows={4}
+        onChange={(value) => {
+          setAnswer(value);
+          saveTestTaskDraft(application.id, { answer: value, artifactLink });
+        }}
+      />
+      <label className="grid gap-2 text-sm font-medium">
+        Ссылка на результат
+        <Input
+          type="url"
+          placeholder="https://github.com/..."
+          value={artifactLink}
+          onChange={(event) => {
+            const value = event.target.value;
+            setArtifactLink(value);
+            saveTestTaskDraft(application.id, { answer, artifactLink: value });
+          }}
+        />
+      </label>
+
+      <Button type="button" disabled={!editable || saving} onClick={saveAnswer}>
+        {saving ? "Отправляем..." : application.testTaskSubmittedAt ? "Обновить ответ" : "Отправить ответ"}
+      </Button>
+
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <Input
+          type="file"
+          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          disabled={!editable}
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        />
+        <Button type="button" variant="secondary" disabled={!editable || uploading || !file} onClick={uploadFile}>
+          <Upload className="mr-2 h-4 w-4" />
+          {uploading ? "Загружаем..." : "Загрузить файл"}
+        </Button>
+      </div>
+
+      {application.testTaskFileName ? (
+        <Button
+          className="justify-self-start"
+          type="button"
+          variant="secondary"
+          onClick={() => downloadApiFile(`/applications/${application.id}/test-task-file`, application.testTaskFileName ?? "Ответ")}
+        >
+          <Download className="mr-2 h-4 w-4" />{application.testTaskFileName}
+        </Button>
+      ) : null}
+
+      {!editable && application.testTaskReviewStatus === "APPROVED" ? (
+        <p className="text-sm text-green-700">Ответ одобрен. Редактирование закрыто.</p>
+      ) : null}
+      <InlineFeedback error={error} message={message} />
+    </div>
   );
 }
 
@@ -1539,7 +1797,9 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
 
       {visibleApplications.map((application) => {
         const isSaving = savingApplicationId === application.id;
-        const canApprove = cohort.roles.length > 0;
+        const hasRoles = cohort.roles.length > 0;
+        const testTaskReady = !cohort.testTask?.publishedAt || application.testTaskReviewStatus === "APPROVED";
+        const canApprove = hasRoles && testTaskReady;
         const isExpanded = expandedApplicationId === application.id;
 
         return (
@@ -1584,6 +1844,16 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
                   )}
                 </div>
 
+                {cohort.testTask?.publishedAt ? (
+                  <AdminTestTaskReview
+                    application={application}
+                    onUpdated={(updated) => {
+                      setApplications((current) => current.map((item) => item.id === updated.id ? updated : item));
+                      setMessage("Статус ответа на тестовое задание обновлён");
+                    }}
+                  />
+                ) : null}
+
                 <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                   <select
                     className="h-10 rounded-md border border-border bg-white px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -1604,7 +1874,10 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
                     Одобрить
                   </Button>
                 </div>
-                {!canApprove ? <p className="text-sm text-red-700">Сначала добавьте роли в настройках когорты.</p> : null}
+                {!hasRoles ? <p className="text-sm text-red-700">Сначала добавьте роли в настройках когорты.</p> : null}
+                {hasRoles && !testTaskReady ? (
+                  <p className="text-sm text-red-700">Сначала проверьте и одобрите ответ на тестовое задание.</p>
+                ) : null}
 
                 <div className="grid gap-2">
                   <TextAreaField
@@ -1634,6 +1907,94 @@ function AdminApplicationsPanel({ cohort }: { cohort: Cohort }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function AdminTestTaskReview({
+  application,
+  onUpdated
+}: {
+  application: AdminApplication;
+  onUpdated: (application: AdminApplication) => void;
+}) {
+  const [comment, setComment] = useState(application.testTaskReviewComment ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function review(status: "APPROVED" | "CHANGES_REQUESTED") {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await reviewTestTaskAnswer(application.id, status, comment);
+      onUpdated(result.application);
+      if (status === "APPROVED") setComment("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не удалось проверить ответ");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-3 rounded-md border border-border bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">Ответ на тестовое задание</p>
+        {application.testTaskSubmittedAt ? (
+          <span className="rounded-md bg-primarySoft px-2 py-1 text-xs font-medium text-primary">
+            {testTaskReviewLabel(application.testTaskReviewStatus)}
+          </span>
+        ) : null}
+      </div>
+
+      {!application.testTaskSubmittedAt ? (
+        <p className="text-sm text-muted">Студент ещё не отправил ответ.</p>
+      ) : (
+        <>
+          {application.testTaskAnswer ? (
+            <p className="whitespace-pre-wrap text-sm">{application.testTaskAnswer}</p>
+          ) : null}
+          {application.testTaskArtifactLink ? (
+            <a
+              className="break-all text-sm text-primary underline"
+              href={application.testTaskArtifactLink}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {application.testTaskArtifactLink}
+            </a>
+          ) : null}
+          {application.testTaskFileName ? (
+            <Button
+              className="justify-self-start"
+              type="button"
+              variant="secondary"
+              onClick={() => downloadApiFile(
+                `/admin/applications/${application.id}/test-task-file`,
+                application.testTaskFileName ?? "Ответ"
+              )}
+            >
+              <Download className="mr-2 h-4 w-4" />{application.testTaskFileName}
+            </Button>
+          ) : null}
+
+          <TextAreaField
+            label="Комментарий для исправления"
+            value={comment}
+            rows={3}
+            onChange={setComment}
+          />
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button type="button" disabled={saving} onClick={() => review("APPROVED")}>
+              Одобрить ответ
+            </Button>
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => review("CHANGES_REQUESTED")}>
+              Вернуть на исправление
+            </Button>
+          </div>
+          {error ? <InlineFeedback error={error} message={null} /> : null}
+        </>
+      )}
     </div>
   );
 }
@@ -1908,6 +2269,19 @@ function statusLabel(status: Application["status"]) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU").format(new Date(value));
+}
+
+function testTaskReviewLabel(status: Application["testTaskReviewStatus"]) {
+  if (status === "APPROVED") return "Ответ одобрен";
+  if (status === "CHANGES_REQUESTED") return "Нужны исправления";
+  return "На проверке";
+}
+
+function isCohortClosed(cohort: Pick<Cohort, "practiceEnd" | "completedAt">) {
+  if (cohort.completedAt) return true;
+  const end = new Date(cohort.practiceEnd);
+  const closesAt = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1);
+  return Date.now() >= closesAt;
 }
 
 function formatDateTime(value: string) {

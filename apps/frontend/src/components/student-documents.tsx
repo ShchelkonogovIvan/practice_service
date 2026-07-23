@@ -146,6 +146,7 @@ export function StudentDocuments({ application }: { application: Application }) 
   }
 
   const cohortId = application.cohort.id;
+  const closed = isCohortClosed(application.cohort.practiceEnd, application.cohort.completedAt);
 
   return (
     <Card className="p-4 sm:p-5">
@@ -165,6 +166,12 @@ export function StudentDocuments({ application }: { application: Application }) 
         </div>
       ) : null}
 
+      {closed ? (
+        <div className="mt-4 rounded-md border border-border bg-slate-50 px-3 py-2 text-sm text-muted">
+          Практика завершена. Данные и отчёт доступны только для просмотра.
+        </div>
+      ) : null}
+
       {feedbackArea === "load" ? (
         <div>
           <FeedbackNotice error={error} message={message} />
@@ -174,23 +181,23 @@ export function StudentDocuments({ application }: { application: Application }) 
 
       <form className="mt-5 grid gap-4" onSubmit={save}>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field label="ФИО" value={form.studentFio} onChange={(value) => setForm({ ...form, studentFio: value })} onBlur={autosave} />
-          <Field label="ФИО в родительном падеже" value={form.studentFioGenitive} onChange={(value) => setForm({ ...form, studentFioGenitive: value })} onBlur={autosave} />
-          <Field label="Группа" value={form.group} onChange={(value) => setForm({ ...form, group: value })} onBlur={autosave} />
-          <Field label="Код направления" value={form.directionCode} onChange={(value) => setForm({ ...form, directionCode: value })} onBlur={autosave} />
-          <Field label="Наименование направления" value={form.directionName} onChange={(value) => setForm({ ...form, directionName: value })} onBlur={autosave} />
-          <Field label="Образовательная программа" value={form.programName} onChange={(value) => setForm({ ...form, programName: value })} onBlur={autosave} />
-          <Field label="Специальность для титульного листа" value={form.specialty} onChange={(value) => setForm({ ...form, specialty: value })} onBlur={autosave} />
-          <Field label="Руководитель практики от УрФУ" value={form.supervisorUrfuName} onChange={(value) => setForm({ ...form, supervisorUrfuName: value })} onBlur={autosave} />
+          <Field disabled={closed} label="ФИО" value={form.studentFio} onChange={(value) => setForm({ ...form, studentFio: value })} onBlur={autosave} />
+          <Field disabled={closed} label="ФИО в родительном падеже" value={form.studentFioGenitive} onChange={(value) => setForm({ ...form, studentFioGenitive: value })} onBlur={autosave} />
+          <Field disabled={closed} label="Группа" value={form.group} onChange={(value) => setForm({ ...form, group: value })} onBlur={autosave} />
+          <Field disabled={closed} label="Код направления" value={form.directionCode} onChange={(value) => setForm({ ...form, directionCode: value })} onBlur={autosave} />
+          <Field disabled={closed} label="Наименование направления" value={form.directionName} onChange={(value) => setForm({ ...form, directionName: value })} onBlur={autosave} />
+          <Field disabled={closed} label="Образовательная программа" value={form.programName} onChange={(value) => setForm({ ...form, programName: value })} onBlur={autosave} />
+          <Field disabled={closed} label="Специальность для титульного листа" value={form.specialty} onChange={(value) => setForm({ ...form, specialty: value })} onBlur={autosave} />
+          <Field disabled={closed} label="Руководитель практики от УрФУ" value={form.supervisorUrfuName} onChange={(value) => setForm({ ...form, supervisorUrfuName: value })} onBlur={autosave} />
         </div>
-        <Field label="Тема практики" value={form.practiceTopic} onChange={(value) => setForm({ ...form, practiceTopic: value })} onBlur={autosave} />
+        <Field disabled={closed} label="Тема практики" value={form.practiceTopic} onChange={(value) => setForm({ ...form, practiceTopic: value })} onBlur={autosave} />
         <label className="grid gap-2 text-sm font-medium">
           Работы основного этапа
-          <textarea className="min-h-28 rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" value={form.mainStageTasks} onChange={(event) => setForm({ ...form, mainStageTasks: event.target.value })} onBlur={autosave} />
+          <textarea disabled={closed} className="min-h-28 rounded-md border border-border bg-white px-3 py-2 text-sm outline-none disabled:bg-slate-50 focus:border-primary focus:ring-2 focus:ring-primary/20" value={form.mainStageTasks} onChange={(event) => setForm({ ...form, mainStageTasks: event.target.value })} onBlur={autosave} />
         </label>
         {feedbackArea === "form" ? <FeedbackNotice error={error} message={message} /> : null}
 
-        <Button className="w-full sm:w-auto" type="submit" disabled={saving} onMouseDown={(event) => event.preventDefault()}>
+        <Button className="w-full sm:w-auto" type="submit" disabled={saving || closed} onMouseDown={(event) => event.preventDefault()}>
           <Save className="mr-2 h-4 w-4" />
           {saving ? "Сохраняем..." : "Сохранить данные"}
         </Button>
@@ -205,8 +212,8 @@ export function StudentDocuments({ application }: { application: Application }) 
         ) : null}
         {feedbackArea === "report" ? <FeedbackNotice error={error} message={message} /> : null}
         <div className="mt-3 grid gap-3 sm:flex sm:flex-wrap sm:items-center">
-          <Input className="min-w-0 w-full sm:max-w-md" accept=".docx,.pdf" type="file" onChange={(event) => setReport(event.target.files?.[0] ?? null)} />
-          <Button className="w-full sm:w-auto" type="button" disabled={!report || uploading} onClick={uploadReport}>
+          <Input disabled={closed} className="min-w-0 w-full sm:max-w-md" accept=".docx,.pdf" type="file" onChange={(event) => setReport(event.target.files?.[0] ?? null)} />
+          <Button className="w-full sm:w-auto" type="button" disabled={closed || !report || uploading} onClick={uploadReport}>
             <Upload className="mr-2 h-4 w-4" />
             {uploading ? "Загружаем..." : "Загрузить"}
           </Button>
@@ -231,8 +238,15 @@ export function StudentDocuments({ application }: { application: Application }) 
   );
 }
 
-function Field({ label, value, onChange, onBlur }: { label: string; value: string; onChange: (value: string) => void; onBlur?: () => void }) {
-  return <label className="grid gap-2 text-sm font-medium">{label}<Input value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} /></label>;
+function Field({ disabled, label, value, onChange, onBlur }: { disabled?: boolean; label: string; value: string; onChange: (value: string) => void; onBlur?: () => void }) {
+  return <label className="grid gap-2 text-sm font-medium">{label}<Input disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} /></label>;
+}
+
+function isCohortClosed(practiceEnd: string, completedAt: string | null) {
+  if (completedAt) return true;
+  const end = new Date(practiceEnd);
+  const closesAt = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1);
+  return Date.now() >= closesAt;
 }
 
 function DocumentButton({ label, enabled, reason, onClick }: { label: string; enabled: boolean; reason: string | null; onClick: () => void }) {

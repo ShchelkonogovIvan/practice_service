@@ -24,13 +24,14 @@ ENV PORT=4000
 ENV FRONTEND_PORT=3000
 ENV NEXT_PUBLIC_API_URL=/api
 ENV BACKEND_INTERNAL_URL=http://127.0.0.1:4000
+ENV TEMPLATES_DIR=/app/templates
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/backend/node_modules ./apps/backend/node_modules
 COPY --from=build /app/apps/backend/package.json ./apps/backend/package.json
 COPY --from=build /app/apps/backend/dist ./apps/backend/dist
 COPY --from=build /app/apps/backend/prisma ./apps/backend/prisma
-COPY --from=build /app/apps/backend/templates ./apps/backend/templates
+COPY --from=build /app/apps/backend/templates ./templates
 COPY --from=build /app/apps/frontend/node_modules ./apps/frontend/node_modules
 COPY --from=build /app/apps/frontend/package.json ./apps/frontend/package.json
 COPY --from=build /app/apps/frontend/.next ./apps/frontend/.next
